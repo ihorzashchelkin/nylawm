@@ -5,6 +5,8 @@
 #include <xcb/xcb.h>
 #include <xcb/xcb_errors.h>
 
+namespace util {
+
 inline void log_xcb_error(xcb_connection_t *connection,
                           const xcb_generic_error_t *error) {
   static xcb_errors_context_t *error_context = nullptr;
@@ -16,3 +18,5 @@ inline void log_xcb_error(xcb_connection_t *connection,
             << xcb_errors_get_name_for_error(error_context, errorcode, nullptr)
             << std::endl;
 }
+
+} // namespace utils

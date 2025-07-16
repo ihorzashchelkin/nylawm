@@ -1,5 +1,9 @@
 #pragma once
 
+#include <csignal>
+#include <span>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <vector>
 
 #include <xcb/xcb.h>
@@ -21,13 +25,15 @@ struct ResolvedKeyBind {
 
 class Instance {
 public:
-  bool try_init(const char *displayname);
+  bool try_init();
 
+  void prepare_wm_process();
   void run();
   void quit() { running_ = false; }
   void spawn(const char *const command[]);
 
 private:
+  void prepare_spawn_process();
   void flush() { xcb_flush(conn_); }
 
   void resolve_keybinds();

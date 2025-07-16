@@ -1,8 +1,8 @@
 #include <iostream>
 #include <ostream>
+#include <string.h>
 #include <string_view>
 
-#include <csignal>
 #include <cstdlib>
 
 #include <sys/wait.h>
@@ -30,22 +30,20 @@ int main(int argc, char *argv[]) {
   }
 
   instance_ = new wm::Instance();
-  if (!instance_->try_init(config::display)) {
+  if (!instance_->try_init()) {
     if (!config::display_fallback)
       return EXIT_FAILURE;
 
-    std::cerr << "trying " << config::display_fallback << " fallback..." << std::endl;
-    if (!instance_->try_init(config::display_fallback))
+    std::cerr << "trying " << config::display_fallback << " fallback..."
+              << std::endl;
+
+    auto display_env = std::string("DISPLAY=") + config::display_fallback;
+    putenv(const_cast<char *>(display_env.c_str()));
+
+    if (!instance_->try_init())
       return EXIT_FAILURE;
   }
 
-  struct sigaction sa;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_handler = SIG_IGN;
-  sigaction(SIGCHLD, &sa, nullptr);
-
-  while (waitpid(-1, nullptr, WNOHANG) > 0)
-    ;
-
+  instance_->prepare_wm_process();
   instance_->run();
 }

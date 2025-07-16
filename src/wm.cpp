@@ -5,15 +5,19 @@
 #include <cstdlib>
 #include <experimental/scope>
 
+#include <format>
 #include <iostream>
+#include <stdexcept>
+#include <unistd.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_keysyms.h>
+#include <xcb/xproto.h>
 
 namespace wm {
 
-bool Instance::try_init(const char *displayname) {
+bool Instance::try_init() {
   int default_screen_number;
-  conn_ = xcb_connect(displayname, &default_screen_number);
+  conn_ = xcb_connect(nullptr, &default_screen_number);
   if (xcb_connection_has_error(conn_)) {
     std::cerr << "could not connect to X server" << std::endl;
     return false;
@@ -44,7 +48,7 @@ bool Instance::try_init(const char *displayname) {
       xcb_request_check(conn_, xcb_change_window_attributes_checked(
                                    conn_, screen_->root, cw_attr, event_masks));
   if (error) {
-    log_xcb_error(conn_, error);
+    util::log_xcb_error(conn_, error);
     if (error->error_code == 10) // Bad Access
       std::cerr << "is another wm already running?" << std::endl;
 
@@ -96,12 +100,51 @@ void Instance::run() {
 
     int event_type = (event->response_type & ~0x80);
     switch (event_type) {
+    case XCB_MAPPING_NOTIFY: {
+      if (((xcb_mapping_notify_event_t *)event)->request ==
+          XCB_MAPPING_KEYBOARD)
+        grab_keys();
+      break;
+    }
+
     case XCB_KEY_PRESS: {
       handle_key_press((xcb_key_press_event_t *)event);
       break;
     }
     }
   }
+}
+
+void Instance::spawn(const char *const command[]) {
+  if (fork() != 0)
+    return;
+
+  prepare_spawn_process();
+
+  execvp(command[0], const_cast<char **>(command));
+  throw new std::runtime_error(std::format("execvp '%s' failed", command[0]));
+}
+
+void Instance::prepare_wm_process() {
+  struct sigaction sa;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_handler = SIG_IGN;
+  sigaction(SIGCHLD, &sa, nullptr);
+
+  while (waitpid(-1, nullptr, WNOHANG) > 0)
+    ;
+}
+
+void Instance::prepare_spawn_process() {
+  xcb_disconnect(conn_);
+
+  setsid();
+
+  struct sigaction sa;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = 0;
+  sa.sa_handler = SIG_DFL;
+  sigaction(SIGCHLD, &sa, nullptr);
 }
 
 void Instance::handle_key_press(xcb_key_press_event_t *event) {
