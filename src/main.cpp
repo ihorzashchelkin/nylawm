@@ -44,6 +44,5 @@ int main(int argc, char *argv[]) {
       return EXIT_FAILURE;
   }
 
-  instance_->prepare_wm_process();
   instance_->run();
 }

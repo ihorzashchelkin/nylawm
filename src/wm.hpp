@@ -27,14 +27,15 @@ class Instance {
 public:
   bool try_init();
 
-  void prepare_wm_process();
   void run();
   void quit() { running_ = false; }
   void spawn(const char *const command[]);
 
 private:
-  void prepare_spawn_process();
   void flush() { xcb_flush(conn_); }
+
+  void prepare_wm_process();
+  void prepare_spawn_process();
 
   void resolve_keybinds();
   void grab_keys();

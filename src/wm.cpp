@@ -85,6 +85,7 @@ void Instance::grab_keys() {
 }
 
 void Instance::run() {
+  prepare_wm_process();
   resolve_keybinds();
   grab_keys();
 
