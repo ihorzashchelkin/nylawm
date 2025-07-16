@@ -14,15 +14,8 @@
 #include <xcb/xcb_errors.h>
 #include <xcb/xproto.h>
 
+#include "config.hpp"
 #include "util.hpp"
-
-#define STRING(s) #s
-
-#ifndef VERSION
-#define VERSION "unset version"
-#endif
-
-constexpr const char *fallback_display = ":1";
 
 struct WMState {
   xcb_connection_t *connection;
@@ -33,7 +26,7 @@ WMState *try_startup(const char *displayname);
 
 int main(int argc, char *argv[]) {
   if (argc == 2 && std::string_view{argv[1]} == "-v") {
-    std::cout << argv[0] << '-' << STRING(VERSION) << std::endl;
+    std::cout << argv[0] << '-' << version << std::endl;
     return EXIT_SUCCESS;
   }
 
@@ -97,7 +90,7 @@ WMState *try_startup(const char *displayname) {
   if (error) {
     log_xcb_error(connection, error);
     if (error->error_code == 10)
-      std::cerr << "another wm is already running?" << std::endl;
+      std::cerr << "another wm is already runting?" << std::endl;
 
     return nullptr;
   }
