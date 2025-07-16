@@ -1,14 +1,13 @@
+#include <experimental/scope>
 #include <iostream>
 #include <ostream>
 #include <string_view>
 
-#include <cerrno>
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
-#include <cstring>
 
-#include <liburing.h>
+#include <sys/wait.h>
 
 #include <xcb/xcb.h>
 #include <xcb/xcb_errors.h>
@@ -17,12 +16,8 @@
 #include "config.hpp"
 #include "util.hpp"
 
-struct WMState {
-  xcb_connection_t *connection;
-  xcb_window_t root;
-};
-
-WMState *try_startup(const char *displayname);
+bool try_startup(const char *displayname, xcb_connection_t *&connection,
+                 xcb_window_t &root);
 
 int main(int argc, char *argv[]) {
   if (argc == 2 && std::string_view{argv[1]} == "-v") {
@@ -35,34 +30,36 @@ int main(int argc, char *argv[]) {
     return EXIT_SUCCESS;
   }
 
-  WMState *state = try_startup(nullptr);
-  if (!state) {
-    if (fallback_display) {
-      std::cout << "trying " << fallback_display << " fallback..." << std::endl;
-      state = try_startup(fallback_display);
-    }
+  xcb_connection_t *connection;
+  xcb_window_t root;
 
-    if (!state)
+  if (!try_startup(nullptr, connection, root)) {
+    if (!fallback_display)
+      return EXIT_FAILURE;
+
+    std::cerr << "trying " << fallback_display << " fallback..." << std::endl;
+    if (!try_startup(fallback_display, connection, root))
       return EXIT_FAILURE;
   }
 
-  xcb_connection_t *&connection = state->connection;
-  uint32_t xcb_fd = xcb_get_file_descriptor(connection);
+  while (true) {
+    xcb_generic_event_t *event = xcb_wait_for_event(connection);
+    std::experimental::scope_exit free_event([&] { free(event); });
 
-  io_uring ring;
-  if (io_uring_queue_init(8, &ring, 0) < 0) {
-    std::cerr << "io_uring_queue_init: " << strerror(errno) << std::endl;
-    return EXIT_FAILURE;
+    if (!event) {
+      std::cerr << "lost connection to X server" << std::endl;
+      break;
+    }
   }
 }
 
-WMState *try_startup(const char *displayname) {
+bool try_startup(const char *displayname, xcb_connection_t *&connection,
+                 xcb_window_t &root) {
   int default_screen_number;
-  xcb_connection_t *connection =
-      xcb_connect(displayname, &default_screen_number);
+  connection = xcb_connect(displayname, &default_screen_number);
   if (xcb_connection_has_error(connection)) {
     std::cerr << "could connect to X server" << std::endl;
-    return nullptr;
+    return false;
   }
 
   const xcb_setup_t *setup = xcb_get_setup(connection);
@@ -78,10 +75,10 @@ WMState *try_startup(const char *displayname) {
   if (!screen) {
     std::cerr << "could not find screen: " << default_screen_number
               << std::endl;
-    return nullptr;
+    return false;
   }
 
-  xcb_window_t &root = screen->root;
+  root = screen->root;
 
   xcb_generic_error_t *error = xcb_request_check(
       connection, xcb_change_window_attributes_checked(
@@ -92,7 +89,7 @@ WMState *try_startup(const char *displayname) {
     if (error->error_code == 10)
       std::cerr << "another wm is already runting?" << std::endl;
 
-    return nullptr;
+    return false;
   }
 
   struct sigaction sa;
@@ -103,5 +100,5 @@ WMState *try_startup(const char *displayname) {
   while (waitpid(-1, nullptr, WNOHANG) > 0)
     ;
 
-  return new WMState{connection, root};
+  return true;
 }
