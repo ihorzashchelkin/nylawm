@@ -44,12 +44,12 @@ int main(int argc, char *argv[]) {
 
   while (true) {
     xcb_generic_event_t *event = xcb_wait_for_event(connection);
-    std::experimental::scope_exit free_event([&] { free(event); });
-
     if (!event) {
       std::cerr << "lost connection to X server" << std::endl;
       break;
     }
+
+    std::experimental::scope_exit free_event([&] { free(event); });
   }
 }
 
