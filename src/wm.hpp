@@ -1,0 +1,45 @@
+#pragma once
+
+#include <vector>
+
+#include <xcb/xcb.h>
+#include <xcb/xproto.h>
+
+namespace wm {
+
+struct KeyBind {
+  uint16_t modifiers;
+  int keysym;
+  void (*handler)();
+};
+
+struct ResolvedKeyBind {
+  uint16_t modifiers;
+  xcb_keycode_t keycode;
+  void (*handler)();
+};
+
+class Instance {
+public:
+  bool try_init(const char *displayname);
+
+  void run();
+  void quit() { running_ = false; }
+
+private:
+  void flush() { xcb_flush(conn_); }
+
+  void resolve_keybinds();
+  void grab_keys();
+
+  void handle_key_press(xcb_key_press_event_t *event);
+
+  bool running_ = false;
+  xcb_connection_t *conn_;
+  xcb_screen_t *screen_;
+  std::vector<ResolvedKeyBind> resolved_keybinds_;
+};
+
+Instance *instance();
+
+} // namespace wm
