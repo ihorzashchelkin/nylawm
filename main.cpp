@@ -87,7 +87,7 @@ bool try_startup(const char *displayname, xcb_connection_t *&connection,
   if (error) {
     log_xcb_error(connection, error);
     if (error->error_code == 10)
-      std::cerr << "is another wm is already runting?" << std::endl;
+      std::cerr << "is another wm already runting?" << std::endl;
 
     return false;
   }
