@@ -58,7 +58,7 @@ bool try_startup(const char *displayname, xcb_connection_t *&connection,
   int default_screen_number;
   connection = xcb_connect(displayname, &default_screen_number);
   if (xcb_connection_has_error(connection)) {
-    std::cerr << "could connect to X server" << std::endl;
+    std::cerr << "could not connect to X server" << std::endl;
     return false;
   }
 
@@ -87,7 +87,7 @@ bool try_startup(const char *displayname, xcb_connection_t *&connection,
   if (error) {
     log_xcb_error(connection, error);
     if (error->error_code == 10)
-      std::cerr << "another wm is already runting?" << std::endl;
+      std::cerr << "is another wm is already runting?" << std::endl;
 
     return false;
   }
