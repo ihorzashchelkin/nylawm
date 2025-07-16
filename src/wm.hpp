@@ -25,6 +25,7 @@ public:
 
   void run();
   void quit() { running_ = false; }
+  void spawn(const char *const command[]);
 
 private:
   void flush() { xcb_flush(conn_); }
@@ -41,5 +42,8 @@ private:
 };
 
 Instance *instance();
+inline void run() { instance()->run(); }
+inline void quit() { instance()->quit(); }
+inline void spawn(const char *const command[]) { instance()->spawn(command); }
 
 } // namespace wm
