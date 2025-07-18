@@ -6,24 +6,22 @@
 #include <xcb/xproto.h>
 
 #include "conf_types.hpp"
-#include "wm.hpp"
 
-namespace wm {
-namespace conf {
+class MyConfiguration : public wm::Configuration {
+public:
+    virtual const char* display_fallback() const { return ":1"; }
+    virtual bool debug_xevents() const { return true; }
 
-    constexpr const char* version = "v0.0.1";
-    constexpr const bool debug_xevents = true;
+    virtual std::span<const wm::KeyBind> keybinds() const
+    {
+        static constexpr xcb_mod_mask_t Mod = XCB_MOD_MASK_4;
+        static constexpr xcb_mod_mask_t Shift = XCB_MOD_MASK_SHIFT;
 
-    constexpr const char* display_fallback = ":1";
+        static const wm::KeyBind bindings[] = {
+            { Mod, XK_Return, [](auto actions) { actions->spawn((const char* const[]) { "ghostty", nullptr }); } },
+            { Mod | Shift, XK_Q, [](auto actions) { actions->quit(); } },
+        };
 
-    constexpr const char* term_command[] = { "ghostty", nullptr };
-
-    constexpr const xcb_mod_mask_t Mod = XCB_MOD_MASK_4;
-    constexpr const xcb_mod_mask_t Shift = XCB_MOD_MASK_SHIFT;
-    constexpr const auto keybinds = std::to_array<KeyBind>({
-        { Mod, XK_Return, [] { wm::spawn(term_command); } },
-        { Mod | Shift, XK_Q, [] { wm::quit(); } },
-    });
-
-}
-}
+        return std::span<const wm::KeyBind> { bindings, std::size(bindings) };
+    }
+};

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <vector>
 
 #include <unistd.h>
@@ -10,23 +11,24 @@
 #include <xcb/xcb_errors.h>
 #include <xcb/xproto.h>
 
+#include "conf_types.hpp"
 #include "xevent_handler.hpp"
 
 namespace wm {
 
-struct ResolvedKeyBind {
-    uint16_t modifiers;
-    xcb_keycode_t keycode;
-    void (*handler)();
-};
-
-class Instance : public XEventHandler {
+class WMInstance : public XEventHandler, public WMActions {
 public:
+    explicit WMInstance(const std::shared_ptr<Configuration> conf)
+        : conf_(conf)
+    {
+    }
+    virtual ~WMInstance() = default;
+
     bool try_init();
 
     void run();
-    void quit() { running_ = false; }
-    void spawn(const char* const command[]);
+    void quit() override { running_ = false; }
+    void spawn(const char* const command[]) override;
 
     // void handle_button_press(const xcb_button_press_event_t* event) override;
     // void handle_client_message(const xcb_client_message_event_t* event) override;
@@ -52,13 +54,12 @@ private:
     void resolve_keybinds();
     void grab_keys();
 
-    xcb_errors_context_t* error_context = nullptr;
     bool running_ = false;
+    const std::shared_ptr<Configuration> conf_;
+    xcb_errors_context_t* error_context = nullptr;
     xcb_connection_t* conn_;
     xcb_screen_t* screen_;
     std::vector<ResolvedKeyBind> resolved_keybinds_;
-
-    virtual ~Instance() = default;
 };
 
 } // namespace wm

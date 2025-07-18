@@ -1,15 +1,11 @@
 .PHONY: build
-build: format configure
+build: configure
 	@cmake --build build
 
 .PHONY: configure
 configure:
 	@cmake -B build .
 	@mv build/compile_commands.json .
-
-.PHONY: format
-format:
-	@find . -regex '.*\.\(cpp\|hpp\|cc\|cxx\)' -exec clang-format -style=file -i {} \;
 
 .PHONY: clean
 clean:

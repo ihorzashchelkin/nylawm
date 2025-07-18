@@ -1,9 +1,7 @@
-#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <experimental/scope>
 #include <iostream>
-#include <stdexcept>
 
 #include <unistd.h>
 
@@ -11,12 +9,11 @@
 #include <xcb/xcb_keysyms.h>
 #include <xcb/xproto.h>
 
-#include "conf_types.hpp"
 #include "wm_instance.hpp"
 
 namespace wm {
 
-bool Instance::try_init()
+bool WMInstance::try_init()
 {
     int default_screen_number;
     conn_ = xcb_connect(nullptr, &default_screen_number);
@@ -58,12 +55,12 @@ bool Instance::try_init()
     return true;
 }
 
-void Instance::resolve_keybinds()
+void WMInstance::resolve_keybinds()
 {
     xcb_key_symbols_t* syms = xcb_key_symbols_alloc(conn_);
     std::experimental::scope_exit free_syms([&] { free(syms); });
 
-    for (const conf::KeyBind& bind : conf::keybinds) {
+    for (const auto& bind : conf_->keybinds()) {
         xcb_keycode_t* keycodes = xcb_key_symbols_get_keycode(syms, bind.keysym);
         std::experimental::scope_exit free_keycodes([=] { free(keycodes); });
 
@@ -75,7 +72,7 @@ void Instance::resolve_keybinds()
     }
 }
 
-void Instance::grab_keys()
+void WMInstance::grab_keys()
 {
     for (const ResolvedKeyBind& resolved_bind : resolved_keybinds_) {
         xcb_grab_key(conn_, 0, screen_->root, resolved_bind.modifiers,
@@ -84,7 +81,7 @@ void Instance::grab_keys()
     }
 }
 
-void Instance::run()
+void WMInstance::run()
 {
     prepare_wm_process();
     resolve_keybinds();
@@ -97,7 +94,7 @@ void Instance::run()
 
         if (event) {
             std::experimental::scope_exit free_event([&] { free(event); });
-            handle_generic(event);
+            handle_generic(conf_, event);
         } else {
             std::cerr << "lost connection to X server" << std::endl;
             running_ = false;
@@ -105,7 +102,7 @@ void Instance::run()
     }
 }
 
-void Instance::spawn(const char* const command[])
+void WMInstance::spawn(const char* const command[])
 {
     switch (fork()) {
         case -1: {
@@ -122,7 +119,7 @@ void Instance::spawn(const char* const command[])
     }
 }
 
-void Instance::prepare_wm_process()
+void WMInstance::prepare_wm_process()
 {
     struct sigaction sa;
     sigemptyset(&sa.sa_mask);
@@ -133,7 +130,7 @@ void Instance::prepare_wm_process()
         ;
 }
 
-void Instance::prepare_spawn_process()
+void WMInstance::prepare_spawn_process()
 {
     close(xcb_get_file_descriptor(conn_));
 
@@ -146,27 +143,27 @@ void Instance::prepare_spawn_process()
     sigaction(SIGCHLD, &sa, nullptr);
 }
 
-void Instance::handle_key_press(const xcb_key_press_event_t* event)
+void WMInstance::handle_key_press(const xcb_key_press_event_t* event)
 {
     auto& keycode = event->detail;
     auto& modifiers = event->state;
 
     for (const ResolvedKeyBind& resolved_bind : resolved_keybinds_) {
         if (resolved_bind.keycode == keycode && resolved_bind.modifiers == modifiers) {
-            resolved_bind.handler();
+            resolved_bind.handler(this);
             break;
         }
     }
 }
 
-void Instance::handle_configure_request(const xcb_configure_request_event_t* event)
+void WMInstance::handle_configure_request(const xcb_configure_request_event_t* event)
 {
     constexpr const uint16_t mask = (XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT);
     constexpr const uint32_t values[] = { 0, 0, 1024, 768 };
     xcb_configure_window(conn_, event->window, mask, values);
 }
 
-void Instance::log_xcb_error(const xcb_generic_error_t* error)
+void WMInstance::log_xcb_error(const xcb_generic_error_t* error)
 {
     if (!error_context)
         xcb_errors_context_new(conn_, &error_context);
@@ -175,4 +172,4 @@ void Instance::log_xcb_error(const xcb_generic_error_t* error)
     std::cerr << "error: " << int(errorcode) << " Bad" << xcb_errors_get_name_for_error(error_context, errorcode, nullptr) << std::endl;
 }
 
-} // namespace wm
+}
