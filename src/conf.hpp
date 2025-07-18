@@ -10,7 +10,7 @@
 class MyConfiguration : public wm::Configuration {
 public:
     virtual const char* display_fallback() const { return ":1"; }
-    virtual bool debug_xevents() const { return true; }
+    virtual bool debug_events() const { return true; }
 
     virtual std::span<const wm::KeyBind> keybinds() const
     {

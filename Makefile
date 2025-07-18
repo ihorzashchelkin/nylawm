@@ -4,7 +4,7 @@ build: configure
 
 .PHONY: configure
 configure:
-	@cmake -B build .
+	@cmake -DCMAKE_BUILD_TYPE=Debug -B build .
 	@mv build/compile_commands.json .
 
 .PHONY: clean
@@ -13,7 +13,14 @@ clean:
 
 .PHONY: run
 run:
-	@build/wm
+	build/wm
+
+.PHONY: xev
+xev:
+	DISPLAY=:1 xev -root \
+		-event structure \
+		-event substructure \
+		-event property
 
 .PHONY: xephyr
 xephyr:

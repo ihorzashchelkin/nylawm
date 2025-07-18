@@ -1,8 +1,7 @@
 #include <iostream>
-#include <memory>
 
 #include "conf.hpp"
-#include "wm_instance.hpp"
+#include "window_manager.hpp"
 
 int main(int argc, char* argv[])
 {
@@ -16,11 +15,11 @@ int main(int argc, char* argv[])
         return EXIT_SUCCESS;
     }
 
-    const auto conf = std::make_shared<MyConfiguration>();
-    wm::WMInstance instance(conf);
+    const MyConfiguration conf;
+    wm::WindowManager instance(conf);
 
     if (!instance.try_init()) {
-        const auto& display_fallback = conf->display_fallback();
+        const auto& display_fallback = conf.display_fallback();
         if (!display_fallback)
             return EXIT_FAILURE;
 

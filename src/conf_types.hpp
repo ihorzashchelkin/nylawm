@@ -9,13 +9,13 @@
 
 namespace wm {
 
-class WMActions {
+class WindowManagerActions {
 public:
     virtual void quit() { }
     virtual void spawn(const char* const command[]) { }
 };
 
-using ActionsConsumer = void (*)(WMActions*);
+using ActionsConsumer = void (*)(WindowManagerActions*);
 
 struct KeyBind {
     uint16_t modifiers;
@@ -31,7 +31,7 @@ struct ResolvedKeyBind {
 
 class Configuration {
 public:
-    virtual bool debug_xevents() const = 0;
+    virtual bool debug_events() const = 0;
     virtual const char* display_fallback() const = 0;
     virtual std::span<const KeyBind> keybinds() const = 0;
 };

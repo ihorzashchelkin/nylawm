@@ -12,7 +12,10 @@ add_executable(${PROJECT_NAME})
 target_link_libraries(${PROJECT_NAME}
     xcb
     xcb-errors
-    xcb-keysyms)
+    xcb-keysyms
+    xcb-ewmh
+)
 
 add_subdirectory(src)
+# add_subdirectory(tests)
 
