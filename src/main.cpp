@@ -1,48 +1,44 @@
 #include <iostream>
-#include <ostream>
-#include <string.h>
-#include <string_view>
+#include <print>
 
-#include <cstdlib>
+#include "conf.hpp"
+#include "wm_instance.hpp"
 
-#include <sys/wait.h>
+static wm::Instance* instance;
 
-#include <xcb/xcb.h>
-#include <xcb/xcb_errors.h>
-#include <xcb/xcb_keysyms.h>
-#include <xcb/xproto.h>
+namespace wm {
 
-#include "config.hpp"
-#include "wm.hpp"
+void quit() { instance->quit(); }
+void spawn(const char* const command[]) { instance->spawn(command); }
 
-static wm::Instance *instance_;
-wm::Instance *wm::instance() { return instance_; }
+}
 
-int main(int argc, char *argv[]) {
-  if (argc == 2 && std::string_view{argv[1]} == "-v") {
-    std::cout << config::version << std::endl;
-    return EXIT_SUCCESS;
-  }
+int main(int argc, char* argv[])
+{
+    if (argc == 2 && std::string_view { argv[1] } == "-v") {
+        std::println(wm::conf::version);
+        return EXIT_SUCCESS;
+    }
 
-  if (argc > 1) {
-    std::cout << "usage: " << argv[0] << " [-v]" << std::endl;
-    return EXIT_SUCCESS;
-  }
+    if (argc > 1) {
+        std::println("usage: ", argv[0], " [-v]");
+        return EXIT_SUCCESS;
+    }
 
-  instance_ = new wm::Instance();
-  if (!instance_->try_init()) {
-    if (!config::display_fallback)
-      return EXIT_FAILURE;
+    instance = new wm::Instance();
+    if (!instance->try_init()) {
+        if (!wm::conf::display_fallback)
+            return EXIT_FAILURE;
 
-    std::cerr << "trying " << config::display_fallback << " fallback..."
-              << std::endl;
+        std::cerr << "trying " << wm::conf::display_fallback << " fallback..."
+                  << std::endl;
 
-    auto display_env = std::string("DISPLAY=") + config::display_fallback;
-    putenv(const_cast<char *>(display_env.c_str()));
+        auto display_env = std::string("DISPLAY=") + wm::conf::display_fallback;
+        putenv(const_cast<char*>(display_env.c_str()));
 
-    if (!instance_->try_init())
-      return EXIT_FAILURE;
-  }
+        if (!instance->try_init())
+            return EXIT_FAILURE;
+    }
 
-  instance_->run();
+    instance->run();
 }
