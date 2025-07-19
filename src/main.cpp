@@ -1,7 +1,20 @@
 #include <iostream>
+#include <iterator>
 
-#include "conf.hpp"
+#include <X11/keysym.h>
+
 #include "window_manager.hpp"
+
+inline constexpr const char* const term_command[] = { "ghostty", nullptr };
+
+inline constexpr const xcb_mod_mask_t Mod = XCB_MOD_MASK_4;
+inline constexpr const xcb_mod_mask_t Shift = XCB_MOD_MASK_SHIFT;
+inline constexpr const wm::KeyBind bindings[] = {
+    // clang-format off
+    { Mod,         XK_Return, [](auto wm) { wm->spawn(term_command); } },
+    { Mod | Shift, XK_Q,      [](auto wm) { wm->quit(); } },
+    // clang-format on
+};
 
 int main(int argc, char* argv[])
 {
@@ -15,17 +28,14 @@ int main(int argc, char* argv[])
         return EXIT_SUCCESS;
     }
 
-    const MyConfiguration conf;
-    wm::WindowManager instance(conf);
+    wm::Config config = {};
+    config.debug_events = true;
+    config.keybinds = { bindings, std::size(bindings) };
+
+    wm::WindowManager instance(config);
 
     if (!instance.try_init()) {
-        const auto& display_fallback = conf.display_fallback();
-        if (!display_fallback)
-            return EXIT_FAILURE;
-
-        std::cerr << "trying " << display_fallback << " fallback..." << std::endl;
-        auto display_env = std::string("DISPLAY=") + display_fallback;
-        putenv(const_cast<char*>(display_env.c_str()));
+        putenv(const_cast<char*>("DISPLAY=:1"));
         if (!instance.try_init())
             return EXIT_FAILURE;
     }
