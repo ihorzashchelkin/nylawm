@@ -34,7 +34,9 @@ struct resolved_key_bind {
 struct managed_client {
     xcb_window_t Window;
 
-    static inline constexpr uint8_t FlagValid = 1;
+    static inline constexpr uint8_t FlagDirty = 1;
+    static inline constexpr uint8_t FlagWasMapped = 1 << 1;
+    static inline constexpr uint8_t FlagMapped = 1 << 2;
     uint8_t Flags;
 };
 
@@ -58,26 +60,28 @@ public:
     void Spawn(const char* const command[]);
 
 private:
-    void HandleEvent(const xcb_generic_event_t* event);
-    void HandleError(const xcb_generic_error_t* error);
-    void HandleButtonPress(const xcb_button_press_event_t* event);
-    void HandleClientMessage(const xcb_client_message_event_t* event);
-    void HandleConfigureRequest(const xcb_configure_request_event_t* event);
-    void HandleDestroyNotify(const xcb_destroy_notify_event_t* event);
-    void HandleEntryNotify(const xcb_enter_notify_event_t* event);
-    void HandleExpose(const xcb_expose_event_t* event);
-    void HandleFocusIn(const xcb_focus_in_event_t* event);
-    void HandleKeyPress(const xcb_key_press_event_t* event);
-    void HandleMappingNotify(const xcb_mapping_notify_event_t* event);
-    void HandleMapRequest(const xcb_map_request_event_t* event);
-    void HandleMotionNotify(const xcb_motion_notify_event_t* event);
-    void HandlePropertyNotify(const xcb_property_notify_event_t* event);
-    void HandleResizeRequest(const xcb_resize_request_event_t* event);
-    void HandleUnmapRequest(const xcb_unmap_notify_event_t* event);
+    void HandleEvent(const xcb_generic_event_t* Event);
+    void HandleError(const xcb_generic_error_t* Error);
+    void HandleButtonPress(const xcb_button_press_event_t* Event);
+    void HandleClientMessage(const xcb_client_message_event_t* Event);
+    void HandleConfigureRequest(const xcb_configure_request_event_t* Event);
+    void HandleDestroyNotify(const xcb_destroy_notify_event_t* Event);
+    void HandleEntryNotify(const xcb_enter_notify_event_t* Event);
+    void HandleExpose(const xcb_expose_event_t* Event);
+    void HandleFocusIn(const xcb_focus_in_event_t* Event);
+    void HandleKeyPress(const xcb_key_press_event_t* Event);
+    void HandleMappingNotify(const xcb_mapping_notify_event_t* Event);
+    void HandleMapRequest(const xcb_map_request_event_t* Event);
+    void HandleMotionNotify(const xcb_motion_notify_event_t* Event);
+    void HandlePropertyNotify(const xcb_property_notify_event_t* Event);
+    void HandleResizeRequest(const xcb_resize_request_event_t* Event);
+    void HandleUnmapRequest(const xcb_unmap_notify_event_t* Event);
 
     void Cleanup();
     void Prepare();
     void PrepareSpawn();
+
+    managed_client& Manage(xcb_window_t Window);
 
     void TryResolveKeyBinds();
     void GrabKeys();
