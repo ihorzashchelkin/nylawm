@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <span>
+#include <unordered_map>
 #include <vector>
 
 #include <unistd.h>
@@ -14,82 +16,88 @@
 
 namespace wm {
 
-class WindowManager;
+class window_manager;
+using action = void (*)(window_manager*);
 
-using Action = void (*)(WindowManager*);
-
-struct KeyBind {
-    uint16_t modifiers;
-    int keysym;
-    Action handler;
+struct key_bind {
+    uint16_t Mods;
+    int KeySym;
+    action Handler;
 };
 
-struct ResolvedKeyBind {
-    uint16_t modifiers;
-    xcb_keycode_t keycode;
-    Action handler;
+struct resolved_key_bind {
+    uint16_t Mods;
+    xcb_keycode_t KeyCode;
+    action Handler;
 };
 
-struct Config {
-    bool debug_events;
-    std::span<const KeyBind> keybinds;
+struct managed_client {
+    xcb_window_t Window;
+
+    static inline constexpr uint8_t FlagValid = 1;
+    uint8_t Flags;
 };
 
-struct Node {
-    xcb_window_t window;
+struct config {
+    bool DebugLog;
+    std::span<const key_bind> Bindings;
 };
 
-class WindowManager {
+class window_manager {
 public:
-    explicit WindowManager(const Config& conf)
-        : m_config(conf)
-        , m_xcb_error_context(nullptr)
+    explicit window_manager(const config& conf)
+        : Config(conf)
+        , ErrorContext(nullptr)
     {
     }
-    ~WindowManager() { cleanup(); }
+    ~window_manager() { Cleanup(); }
 
-    bool try_init();
-    void run();
-    void quit() { running_ = false; }
-    void spawn(const char* const command[]);
+    bool TryInit();
+    void Run();
+    void Quit() { Flags &= ~(FlagRunning); }
+    void Spawn(const char* const command[]);
 
 private:
-    void handle_event(const xcb_generic_event_t* event);
-    void handle_error(const xcb_generic_error_t* error);
-    void handle_button_press(const xcb_button_press_event_t* event);
-    void handle_client_message(const xcb_client_message_event_t* event);
-    void handle_configure_request(const xcb_configure_request_event_t* event);
-    void handle_destroy_notify(const xcb_destroy_notify_event_t* event);
-    void handle_enter_notify(const xcb_enter_notify_event_t* event);
-    void handle_expose(const xcb_expose_event_t* event);
-    void handle_focus_in(const xcb_focus_in_event_t* event);
-    void handle_key_press(const xcb_key_press_event_t* event);
-    void handle_mapping_notify(const xcb_mapping_notify_event_t* event);
-    void handle_map_request(const xcb_map_request_event_t* event);
-    void handle_motion_notify(const xcb_motion_notify_event_t* event);
-    void handle_property_notify(const xcb_property_notify_event_t* event);
-    void handle_resize_request(const xcb_resize_request_event_t* event);
-    void handle_unmap_notify(const xcb_unmap_notify_event_t* event);
+    void HandleEvent(const xcb_generic_event_t* event);
+    void HandleError(const xcb_generic_error_t* error);
+    void HandleButtonPress(const xcb_button_press_event_t* event);
+    void HandleClientMessage(const xcb_client_message_event_t* event);
+    void HandleConfigureRequest(const xcb_configure_request_event_t* event);
+    void HandleDestroyNotify(const xcb_destroy_notify_event_t* event);
+    void HandleEntryNotify(const xcb_enter_notify_event_t* event);
+    void HandleExpose(const xcb_expose_event_t* event);
+    void HandleFocusIn(const xcb_focus_in_event_t* event);
+    void HandleKeyPress(const xcb_key_press_event_t* event);
+    void HandleMappingNotify(const xcb_mapping_notify_event_t* event);
+    void HandleMapRequest(const xcb_map_request_event_t* event);
+    void HandleMotionNotify(const xcb_motion_notify_event_t* event);
+    void HandlePropertyNotify(const xcb_property_notify_event_t* event);
+    void HandleResizeRequest(const xcb_resize_request_event_t* event);
+    void HandleUnmapRequest(const xcb_unmap_notify_event_t* event);
 
-    void cleanup();
-    void prepare_wm_process();
-    void prepare_spawn_process();
+    void Cleanup();
+    void Prepare();
+    void PrepareSpawn();
 
-    bool resolve_keybinds();
-    void grab_keys();
+    void TryResolveKeyBinds();
+    void GrabKeys();
 
-    bool running_ = false;
+    static inline constexpr uint8_t FlagRunning = 1;
+    static inline constexpr uint8_t FlagDirty = 2;
+    uint8_t Flags = 0;
 
-    xcb_ewmh_connection_t m_ewmh;
-    xcb_connection_t*& xconn() { return m_ewmh.connection; }
+    std::unordered_map<xcb_window_t, managed_client> ManagedClients;
 
-    xcb_screen_t* m_screen;
-    const xcb_window_t& root() { return m_screen->root; }
+    xcb_ewmh_connection_t Conn;
+    xcb_connection_t*& XConn() { return Conn.connection; }
 
-    xcb_errors_context_t* m_xcb_error_context;
+    xcb_screen_t* Screen;
+    const xcb_window_t& RootWindow() { return Screen->root; }
 
-    const Config& m_config;
-    std::vector<ResolvedKeyBind> m_resolved_keybinds;
+    xcb_errors_context_t* ErrorContext;
+
+    const config& Config;
+    std::vector<resolved_key_bind> ResolvedKeybinds;
 };
 
 }

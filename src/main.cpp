@@ -8,12 +8,12 @@
 
 inline constexpr const char* const term_command[] = { "ghostty", nullptr };
 
-inline constexpr const xcb_mod_mask_t Mod = XCB_MOD_MASK_4;
-inline constexpr const xcb_mod_mask_t Shift = XCB_MOD_MASK_SHIFT;
-inline constexpr const wm::KeyBind bindings[] = {
+inline constexpr xcb_mod_mask_t Mod = XCB_MOD_MASK_4;
+inline constexpr xcb_mod_mask_t Shift = XCB_MOD_MASK_SHIFT;
+inline constexpr wm::key_bind bindings[] = {
     // clang-format off
-    { Mod,         XK_Return, [](auto wm) { wm->spawn(term_command); } },
-    { Mod | Shift, XK_Q,      [](auto wm) { wm->quit(); } },
+    { Mod,         XK_Return, [](auto x) { x->Spawn(term_command); } },
+    { Mod | Shift, XK_Q,      [](auto x) { x->Quit(); } },
     // clang-format on
 };
 
@@ -29,17 +29,18 @@ int main(int argc, char* argv[])
         return EXIT_SUCCESS;
     }
 
-    wm::Config config = {};
-    config.debug_events = true;
-    config.keybinds = { bindings, std::size(bindings) };
+    constexpr wm::config Config = {
+        .DebugLog = true,
+        .Bindings = { bindings, std::size(bindings) },
+    };
 
-    wm::WindowManager instance(config);
+    wm::window_manager Instance(Config);
 
-    if (!instance.try_init()) {
+    if (!Instance.TryInit()) {
         putenv(const_cast<char*>("DISPLAY=:1"));
-        if (!instance.try_init())
+        if (!Instance.TryInit())
             return EXIT_FAILURE;
     }
 
-    instance.run();
+    Instance.Run();
 }
