@@ -35,10 +35,14 @@ struct Config {
     std::span<const KeyBind> keybinds;
 };
 
+struct Node {
+    xcb_window_t window;
+};
+
 class WindowManager {
 public:
     explicit WindowManager(const Config& conf)
-        : m_conf(conf)
+        : m_config(conf)
         , m_xcb_error_context(nullptr)
     {
     }
@@ -51,6 +55,7 @@ public:
 
 private:
     void handle_event(const xcb_generic_event_t* event);
+    void handle_error(const xcb_generic_error_t* error);
     void handle_button_press(const xcb_button_press_event_t* event);
     void handle_client_message(const xcb_client_message_event_t* event);
     void handle_configure_request(const xcb_configure_request_event_t* event);
@@ -83,7 +88,7 @@ private:
 
     xcb_errors_context_t* m_xcb_error_context;
 
-    const Config& m_conf;
+    const Config& m_config;
     std::vector<ResolvedKeyBind> m_resolved_keybinds;
 };
 

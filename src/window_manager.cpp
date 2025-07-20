@@ -6,7 +6,9 @@
 
 #include <fcntl.h>
 #include <iterator>
+#include <limits>
 #include <print>
+#include <string_view>
 #include <unistd.h>
 
 #include <xcb/xcb.h>
@@ -112,7 +114,7 @@ bool wm::WindowManager::resolve_keybinds()
     xcb_key_symbols_t* syms = xcb_key_symbols_alloc(xconn());
     std::experimental::scope_exit free_syms([&] { free(syms); });
 
-    for (const auto& bind : m_conf.keybinds) {
+    for (const auto& bind : m_config.keybinds) {
         xcb_keycode_t* keycodes = xcb_key_symbols_get_keycode(syms, bind.keysym);
         if (!keycodes) {
             return false;
@@ -136,6 +138,42 @@ void wm::WindowManager::grab_keys()
 
 void wm::WindowManager::run()
 {
+    {
+        xcb_query_tree_cookie_t cookie = xcb_query_tree(xconn(), root());
+        xcb_query_tree_reply_t* reply = xcb_query_tree_reply(xconn(), cookie, nullptr);
+
+        xcb_window_t* children = xcb_query_tree_children(reply);
+
+        for (int i = 0; i < xcb_query_tree_children_length(reply); i++) {
+            auto& child = children[i];
+
+            xcb_reparent_window(xconn(),
+                child,
+                root(),
+                0,
+                0);
+            xcb_flush(xconn());
+
+            xcb_get_property_cookie_t cookie = xcb_get_property(xconn(),
+                0,
+                child,
+                m_ewmh._NET_WM_NAME,
+                m_ewmh.UTF8_STRING,
+                0,
+                std::numeric_limits<uint32_t>::max());
+
+            xcb_get_property_reply_t* reply = xcb_get_property_reply(xconn(), cookie, nullptr);
+            if (reply) {
+                int len = xcb_get_property_value_length(reply);
+                const std::string_view str { (char*)xcb_get_property_value(reply), size_t(len) };
+                if (!str.empty())
+                    std::cout << str << std::endl;
+            }
+        }
+
+        free(reply);
+    }
+
     prepare_wm_process();
 
     if (!resolve_keybinds()) {
@@ -206,16 +244,42 @@ void wm::WindowManager::handle_button_press(const xcb_button_press_event_t* even
 
 void wm::WindowManager::handle_client_message(const xcb_client_message_event_t* event)
 {
+    std::cout << "ClientMessage from " << event->window << std::endl;
+
     if (event->type == m_ewmh._NET_WM_STATE) {
+        auto& verb = event->data.data32[0];
+        auto& arg1 = event->data.data32[1];
+        auto& arg2 = event->data.data32[2];
+
+        if (arg1 == m_ewmh._NET_WM_STATE_HIDDEN && verb == XCB_EWMH_WM_STATE_REMOVE) {
+            // uint32_t stack_vals[] = { XCB_STACK_MODE_ABOVE };
+            // xcb_configure_window(xconn(),
+            //     event->window,
+            //     XCB_CONFIG_WINDOW_STACK_MODE,
+            //     stack_vals);
+            //
+
+            xcb_map_window(xconn(), event->window);
+
+            // xcb_set_input_focus(xconn(),
+            //     XCB_INPUT_FOCUS_POINTER_ROOT,
+            //     event->window,
+            //     XCB_CURRENT_TIME);
+
+            // xcb_change_property(xconn(),
+            //     XCB_PROP_MODE_REPLACE,
+            //     root(),
+            //     m_ewmh._NET_ACTIVE_WINDOW,
+            //     XCB_ATOM_WINDOW,
+            //     32,
+            //     1,
+            //     &event->window);
+        }
+
+#if 0
         switch (event->data.data32[0]) {
             case XCB_EWMH_WM_STATE_REMOVE: {
-                {
-                    static xcb_atom_t atom = m_ewmh._NET_WM_STATE_HIDDEN;
-                    xcb_void_cookie_t cookie = xcb_change_property_checked(xconn(), XCB_PROP_MODE_REPLACE, event->window, m_ewmh._NET_WM_STATE, XCB_ATOM_ATOM, 32, 1, &atom);
-                    xcb_request_check(xconn(), cookie);
-                }
-
-                xcb_get_property_cookie_t cookie = xcb_get_property(xconn(), 0, event->window, m_ewmh._NET_WM_STATE, XCB_ATOM_ATOM, 0, 64);
+                xcb_get_property_cookie_t cookie = xcb_get_property(xconn(), 0, event->window, m_ewmh._NET_WM_STATE, XCB_ATOM_ATOM, 0, std::numeric_limits<uint32_t>::max());
                 xcb_get_property_reply_t* reply = xcb_get_property_reply(xconn(), cookie, nullptr);
 
                 if (reply) {
@@ -239,20 +303,91 @@ void wm::WindowManager::handle_client_message(const xcb_client_message_event_t* 
                 break;
             }
         }
+#endif
     }
+}
+
+void wm::WindowManager::handle_error(const xcb_generic_error_t* error)
+{
+    utils::format_xcb_error(std::cerr, m_xcb_error_context, error);
+    std::cerr << std::endl;
 }
 
 void wm::WindowManager::handle_configure_request(const xcb_configure_request_event_t* event)
 {
-    constexpr const uint16_t mask = (XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT);
-    constexpr const uint32_t values[] = { 0, 0, 1024, 768 };
+    std::cout << "ConfigureRequest from " << event->window << std::endl;
+
+    uint32_t mask = 0;
+    uint32_t values[7];
+    int c = 0;
+
+#define COPY_MASK_MEMBER(mask_member, event_member) \
+    do {                                            \
+        if (event->value_mask & mask_member) {      \
+            mask |= mask_member;                    \
+            values[c++] = event->event_member;      \
+        }                                           \
+    } while (0)
+
+    static int i = -1;
+    i++;
+
+#if true
+    COPY_MASK_MEMBER(XCB_CONFIG_WINDOW_X, x);
+    COPY_MASK_MEMBER(XCB_CONFIG_WINDOW_Y, y);
+    COPY_MASK_MEMBER(XCB_CONFIG_WINDOW_WIDTH, width);
+    COPY_MASK_MEMBER(XCB_CONFIG_WINDOW_HEIGHT, height);
+#else // DOESNT WORK
+    mask |= XCB_CONFIG_WINDOW_X;
+    values[c++] = m_screen->width_in_pixels;
+    mask |= XCB_CONFIG_WINDOW_Y;
+    values[c++] = m_screen->height_in_pixels;
+    mask |= XCB_CONFIG_WINDOW_WIDTH;
+    values[c++] = m_screen->width_in_pixels;
+    mask |= XCB_CONFIG_WINDOW_HEIGHT;
+    values[c++] = m_screen->height_in_pixels;
+#endif
+
+    // TODO: apparently have to do honor first ConfigureRequest as-is otherwise some clients won't show up
+
+    COPY_MASK_MEMBER(XCB_CONFIG_WINDOW_BORDER_WIDTH, border_width);
+    COPY_MASK_MEMBER(XCB_CONFIG_WINDOW_SIBLING, sibling);
+    COPY_MASK_MEMBER(XCB_CONFIG_WINDOW_STACK_MODE, stack_mode);
+
     xcb_configure_window(xconn(), event->window, mask, values);
+    xcb_flush(xconn());
+
+    xcb_configure_notify_event_t notify_event = {};
+    notify_event.response_type = XCB_CONFIGURE_NOTIFY;
+    notify_event.event = event->window;
+    notify_event.window = event->window;
+    notify_event.x = 0;
+    notify_event.y = 0;
+    notify_event.width = m_screen->width_in_pixels;
+    notify_event.height = m_screen->height_in_pixels;
+    notify_event.border_width = event->border_width;
+    notify_event.above_sibling = XCB_NONE;
+    notify_event.override_redirect = 0;
+
+    xcb_send_event(xconn(),
+        0,
+        event->window,
+        XCB_EVENT_MASK_STRUCTURE_NOTIFY,
+        (char*)&notify_event);
+    xcb_flush(xconn());
 }
 
 void wm::WindowManager::handle_destroy_notify(const xcb_destroy_notify_event_t* event) { }
 void wm::WindowManager::handle_enter_notify(const xcb_enter_notify_event_t* event) { }
-void wm::WindowManager::handle_expose(const xcb_expose_event_t* event) { }
-void wm::WindowManager::handle_focus_in(const xcb_focus_in_event_t* event) { }
+void wm::WindowManager::handle_expose(const xcb_expose_event_t* event)
+{
+    std::cout << "Expose from " << event->window << std::endl;
+}
+
+void wm::WindowManager::handle_focus_in(const xcb_focus_in_event_t* event)
+{
+    std::cout << "FocusIn" << std::endl;
+}
 
 void wm::WindowManager::handle_key_press(const xcb_key_press_event_t* event)
 {
@@ -267,16 +402,36 @@ void wm::WindowManager::handle_key_press(const xcb_key_press_event_t* event)
     }
 }
 
-void wm::WindowManager::handle_mapping_notify(const xcb_mapping_notify_event_t* event) { }
-void wm::WindowManager::handle_map_request(const xcb_map_request_event_t* event) { }
+void wm::WindowManager::handle_mapping_notify(const xcb_mapping_notify_event_t* event)
+{
+    std::cout << "MappingNotify" << std::endl;
+}
+
+void wm::WindowManager::handle_map_request(const xcb_map_request_event_t* event)
+{
+    std::cout << "MapRequest from " << event->window << std::endl;
+}
+
 void wm::WindowManager::handle_motion_notify(const xcb_motion_notify_event_t* event) { }
-void wm::WindowManager::handle_property_notify(const xcb_property_notify_event_t* event) { }
-void wm::WindowManager::handle_resize_request(const xcb_resize_request_event_t* event) { }
+
+void wm::WindowManager::handle_property_notify(const xcb_property_notify_event_t* event)
+{
+    std::cout << "PropertyNotify from " << event->window << std::endl;
+}
+
+void wm::WindowManager::handle_resize_request(const xcb_resize_request_event_t* event)
+{
+    std::cout << "ResizeRequest from " << event->window << std::endl;
+}
+
 void wm::WindowManager::handle_unmap_notify(const xcb_unmap_notify_event_t* event) { }
 
 void wm::WindowManager::handle_event(const xcb_generic_event_t* event)
 {
     switch (event->response_type & ~0x80) {
+        case 0:
+            handle_error(reinterpret_cast<const xcb_generic_error_t*>(event));
+            break;
         case XCB_BUTTON_PRESS:
             handle_button_press(reinterpret_cast<const xcb_button_press_event_t*>(event));
             break;

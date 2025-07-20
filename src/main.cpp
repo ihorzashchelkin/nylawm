@@ -2,6 +2,7 @@
 #include <iterator>
 
 #include <X11/keysym.h>
+#include <xcb/xproto.h>
 
 #include "window_manager.hpp"
 
