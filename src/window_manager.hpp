@@ -19,33 +19,46 @@ namespace wm {
 class window_manager;
 using action = void (*)(window_manager*);
 
-struct key_bind {
+struct key_bind
+{
     uint16_t Mods;
     int KeySym;
     action Handler;
 };
 
-struct resolved_key_bind {
+struct resolved_key_bind
+{
     uint16_t Mods;
     xcb_keycode_t KeyCode;
     action Handler;
 };
 
-struct managed_client {
-    xcb_window_t Window;
-
-    static inline constexpr uint8_t FlagDirty = 1;
-    static inline constexpr uint8_t FlagWasMapped = 1 << 1;
-    static inline constexpr uint8_t FlagMapped = 1 << 2;
-    uint8_t Flags;
+struct workspace
+{
 };
 
-struct config {
+struct managed_client
+{
+    static inline constexpr uint8_t FlagWasMapped = 1;
+    static inline constexpr uint8_t FlagMapped = 1 << 1;
+    uint8_t Flags;
+
+    uint8_t WorkspaceId;
+
+    uint16_t X, CurrentX;
+    uint16_t Y, CurrentY;
+    uint16_t Width, CurrentWidth;
+    uint16_t Height, CurrentHeight;
+};
+
+struct config
+{
     bool DebugLog;
     std::span<const key_bind> Bindings;
 };
 
-class window_manager {
+class window_manager
+{
 public:
     explicit window_manager(const config& conf)
         : Config(conf)
@@ -75,21 +88,25 @@ private:
     void HandleMotionNotify(const xcb_motion_notify_event_t* Event);
     void HandlePropertyNotify(const xcb_property_notify_event_t* Event);
     void HandleResizeRequest(const xcb_resize_request_event_t* Event);
-    void HandleUnmapRequest(const xcb_unmap_notify_event_t* Event);
+    void HandleUnmapNotify(const xcb_unmap_notify_event_t* Event);
 
     void Cleanup();
     void Prepare();
     void PrepareSpawn();
 
-    managed_client& Manage(xcb_window_t Window);
+    managed_client* WindowToClient(xcb_window_t Window);
+    managed_client* Manage(xcb_window_t Window);
 
     void TryResolveKeyBinds();
     void GrabKeys();
 
     static inline constexpr uint8_t FlagRunning = 1;
-    static inline constexpr uint8_t FlagDirty = 2;
     uint8_t Flags = 0;
 
+    uint8_t ActiveWorkspaceId;
+    std::unordered_map<uint8_t, workspace> Workspaces = {
+        { 0, workspace {} }
+    };
     std::unordered_map<xcb_window_t, managed_client> ManagedClients;
 
     xcb_ewmh_connection_t Conn;

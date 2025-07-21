@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -5,9 +7,11 @@
 
 #include <fcntl.h>
 #include <iterator>
+#include <print>
 #include <string_view>
 #include <unistd.h>
 
+#include <utility>
 #include <xcb/xcb.h>
 #include <xcb/xcb_errors.h>
 #include <xcb/xcb_ewmh.h>
@@ -24,7 +28,8 @@ void window_manager::Cleanup()
     if (ErrorContext)
         xcb_errors_context_free(ErrorContext);
 
-    if (XConn()) {
+    if (XConn())
+    {
         xcb_disconnect(XConn());
         // TODO: is this needed?
         // xcb_ewmh_connection_wipe(&m_ewmh);
@@ -36,12 +41,14 @@ bool window_manager::TryInit()
 {
     int ScreenNumber;
     XConn() = xcb_connect(nullptr, &ScreenNumber);
-    if (xcb_connection_has_error(XConn())) {
+    if (xcb_connection_has_error(XConn()))
+    {
         std::cerr << "could not connect to X server" << std::endl;
         return false;
     }
 
-    if (xcb_errors_context_new(XConn(), &ErrorContext)) {
+    if (xcb_errors_context_new(XConn(), &ErrorContext))
+    {
         std::cerr << "could not create error context" << std::endl;
         return false;
     }
@@ -51,12 +58,14 @@ bool window_manager::TryInit()
 
     Screen = nullptr;
     for (int i = 0; ScreenIter.rem && i <= ScreenNumber;
-        xcb_screen_next(&ScreenIter), i++) {
+        xcb_screen_next(&ScreenIter), i++)
+    {
         if (i == ScreenNumber)
             Screen = ScreenIter.data;
     }
 
-    if (!Screen) {
+    if (!Screen)
+    {
         std::cerr << "could not find screen: " << ScreenNumber << std::endl;
         return false;
     }
@@ -73,7 +82,8 @@ bool window_manager::TryInit()
         &RootEventMask);
 
     xcb_generic_error_t* Error = xcb_request_check(XConn(), Cookie);
-    if (Error) {
+    if (Error)
+    {
         utils::FormatXCBError(std::cerr, ErrorContext, Error);
         std::cerr << std::endl;
 
@@ -84,7 +94,8 @@ bool window_manager::TryInit()
     }
 
     xcb_intern_atom_cookie_t* InternAtomsCookie = xcb_ewmh_init_atoms(Conn.connection, &Conn);
-    if (!xcb_ewmh_init_atoms_replies(&Conn, InternAtomsCookie, (xcb_generic_error_t**)0)) {
+    if (!xcb_ewmh_init_atoms_replies(&Conn, InternAtomsCookie, (xcb_generic_error_t**)0))
+    {
         std::cerr << "could not intern ewmh atoms" << std::endl;
         return false;
     }
@@ -112,9 +123,11 @@ void window_manager::TryResolveKeyBinds()
 {
     xcb_key_symbols_t* Syms = xcb_key_symbols_alloc(XConn());
 
-    for (const auto& Binding : Config.Bindings) {
+    for (const auto& Binding : Config.Bindings)
+    {
         xcb_keycode_t* KeyCodes = xcb_key_symbols_get_keycode(Syms, Binding.KeySym);
-        if (KeyCodes) {
+        if (KeyCodes)
+        {
             for (int i = 0; *(KeyCodes + i) != XCB_NO_SYMBOL; i++)
                 ResolvedKeybinds.emplace_back(resolved_key_bind { Binding.Mods, *(KeyCodes + i), Binding.Handler });
 
@@ -127,7 +140,8 @@ void window_manager::TryResolveKeyBinds()
 
 void window_manager::GrabKeys()
 {
-    for (const auto& ResolvedBind : ResolvedKeybinds) {
+    for (const auto& ResolvedBind : ResolvedKeybinds)
+    {
         xcb_grab_key(XConn(), 0, RootWindow(), ResolvedBind.Mods, ResolvedBind.KeyCode, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
     }
 }
@@ -140,11 +154,14 @@ void window_manager::Run()
 
         xcb_window_t* Children = xcb_query_tree_children(Reply);
 
-        for (int i = 0; i < xcb_query_tree_children_length(Reply); i++) {
-            auto& child = Children[i];
+        for (int i = 0; i < xcb_query_tree_children_length(Reply); i++)
+        {
+            auto& Child = Children[i];
+
+            Manage(Child);
 
             xcb_reparent_window(XConn(),
-                child,
+                Child,
                 RootWindow(),
                 0, 0);
 
@@ -176,60 +193,105 @@ void window_manager::Run()
     GrabKeys();
 
     Flags |= FlagRunning;
-    do {
+    do
+    {
         xcb_generic_event_t* Event = xcb_wait_for_event(XConn());
 
-        if (Event) {
+        if (Event)
+        {
             HandleEvent(Event);
             free(Event);
 
             constexpr bool ParanoidFlush = false;
             if (ParanoidFlush)
                 xcb_flush(XConn());
-        } else {
+        }
+        else
+        {
             std::cerr << "lost connection to X server" << std::endl;
             Flags &= ~FlagRunning;
             break;
         }
 
-        if (Flags & FlagDirty) {
-            for (auto& [Window, Client] : ManagedClients) {
-#if 0
-                if ((Client.Flags & Client.FlagDirty) == 0)
-                    continue;
-#endif
+        int NumMappedClientsInWorkspace = 0;
 
-                if ((Client.Flags & managed_client::FlagMapped) && (Client.Flags & managed_client::FlagWasMapped) == 0) {
-                    std::cout << "Mapping" << std::endl;
+        for (auto& [Window, Client] : ManagedClients)
+        {
+            if (Client.Flags & managed_client::FlagMapped)
+            {
+                if (Client.WorkspaceId == ActiveWorkspaceId)
+                    ++NumMappedClientsInWorkspace;
 
+                if ((Client.Flags & managed_client::FlagWasMapped) == 0)
+                {
                     xcb_map_window(XConn(), Window);
                     Client.Flags |= managed_client::FlagWasMapped;
-                } else {
-                    if ((Client.Flags & managed_client::FlagMapped) == 0 && (Client.Flags & managed_client::FlagWasMapped)) {
-                        std::cout << "Unmapping" << std::endl;
+                }
+            }
+            else
+            {
+                if (Client.Flags & managed_client::FlagWasMapped)
+                {
+                    xcb_unmap_window(XConn(), Window);
+                    Client.Flags &= ~Client.FlagWasMapped;
+                }
+            }
+        }
 
-                        xcb_unmap_window(XConn(), Window);
-                        Client.Flags &= ~Client.FlagWasMapped;
+        if (NumMappedClientsInWorkspace > 0)
+        {
+            int i = -1;
+
+            int NumCols = std::round(std::sqrt(NumMappedClientsInWorkspace));
+            int NumRows = (NumMappedClientsInWorkspace / NumCols) + ((NumMappedClientsInWorkspace % NumCols > 0) ? 1 : 0);
+
+            std::println("{} {} {}", NumCols, NumRows, NumMappedClientsInWorkspace);
+
+            uint16_t Width = Screen->width_in_pixels / NumCols;
+            uint16_t Height = Screen->height_in_pixels / NumRows;
+
+            for (auto& [Window, Client] : ManagedClients)
+            {
+                if (Client.Flags & managed_client::FlagMapped)
+                {
+                    if (Client.WorkspaceId == ActiveWorkspaceId)
+                    {
+                        Client.Width = Width;
+                        Client.Height = Height;
+
+                        i++;
+                        Client.X = (i % NumCols) * Width;
+                        Client.Y = (i / NumCols) * Height;
+
+                        if (Client.X != Client.CurrentX
+                            || Client.Y != Client.CurrentY
+                            || Client.Width != Client.CurrentWidth
+                            || Client.Height != Client.CurrentHeight)
+                        {
+
+                            uint32_t mask = XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT;
+                            uint32_t values[] { Client.X, Client.Y, Client.Width, Client.Height };
+                            xcb_configure_window(XConn(), Window, mask, values);
+
+                            Client.CurrentX = Client.X;
+                            Client.CurrentY = Client.Y;
+                            Client.CurrentWidth = Client.Width;
+                            Client.CurrentHeight = Client.Height;
+                        }
                     }
                 }
-
-#if 0
-                    uint32_t mask = XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT;
-                    uint32_t values[] { 0, 0, Screen->width_in_pixels, Screen->height_in_pixels };
-                    xcb_configure_window(XConn(), Window, mask, values);
-                    xcb_flush(XConn());
-#endif
-
-                Client.Flags &= ~Client.FlagDirty;
             }
-            xcb_flush(XConn());
         }
-    } while (Flags & FlagRunning);
+
+        xcb_flush(XConn());
+    }
+    while (Flags & FlagRunning);
 }
 
 void window_manager::Spawn(const char* const command[])
 {
-    if (fork() == 0) {
+    if (fork() == 0)
+    {
         PrepareSpawn();
         execvp(command[0], const_cast<char**>(command));
         std::cerr << "execvp failed" << std::endl;
@@ -253,7 +315,8 @@ void window_manager::PrepareSpawn()
     close(xcb_get_file_descriptor(XConn()));
 
     constexpr bool RedirectSpawnSTDIO = true;
-    if (RedirectSpawnSTDIO) {
+    if (RedirectSpawnSTDIO)
+    {
         int dev_null_fd = open("/dev/null", O_RDONLY);
         dup2(dev_null_fd, STDIN_FILENO);
         close(dev_null_fd);
@@ -281,17 +344,25 @@ void window_manager::HandleClientMessage(const xcb_client_message_event_t* Event
 {
     std::cout << "ClientMessage from " << Event->window << std::endl;
 
-    wm::managed_client& Client = Manage(Event->window);
+    managed_client* Client = WindowToClient(Event->window);
 
-    if (Event->type == Conn._NET_WM_STATE) {
-        auto& verb = Event->data.data32[0];
-        auto& arg1 = Event->data.data32[1];
-        auto& arg2 = Event->data.data32[2];
+    if (Event->type == Conn._NET_WM_STATE)
+    {
+        const uint32_t& verb = Event->data.data32[0];
+        const uint32_t& arg1 = Event->data.data32[1];
+        const uint32_t& arg2 = Event->data.data32[2];
 
-        if (arg1 == Conn._NET_WM_STATE_HIDDEN && verb == XCB_EWMH_WM_STATE_REMOVE) {
-            // TODO:
-            Client.Flags |= managed_client::FlagMapped;
-            Client.Flags &= ~managed_client::FlagWasMapped;
+        if (arg1 == Conn._NET_WM_STATE_HIDDEN && verb == XCB_EWMH_WM_STATE_REMOVE)
+        {
+            if (Client)
+            {
+                Client->Flags |= managed_client::FlagMapped;
+            }
+            else
+            {
+                // TODO: what here?
+                xcb_map_window(XConn(), Event->window);
+            }
 
             // uint32_t stack_vals[] = { XCB_STACK_MODE_ABOVE };
             // xcb_configure_window(xconn(),
@@ -354,35 +425,67 @@ void window_manager::HandleError(const xcb_generic_error_t* Error)
     std::cerr << std::endl;
 }
 
-managed_client& window_manager::Manage(xcb_window_t Window)
+managed_client* window_manager::WindowToClient(xcb_window_t Window)
 {
-    if (!ManagedClients.contains(Window)) {
-        Flags |= FlagDirty;
-        ManagedClients.emplace(std::pair { Window, managed_client { .Window = Window } });
-    }
-    return ManagedClients.at(Window);
+    return ManagedClients.contains(Window) ? &ManagedClients.at(Window) : nullptr;
+}
+
+managed_client* window_manager::Manage(xcb_window_t Window)
+{
+    auto* Client = WindowToClient(Window);
+    if (Client)
+        return Client;
+    return &ManagedClients.emplace(std::make_pair(Window, managed_client {})).first->second;
 }
 
 void window_manager::HandleConfigureRequest(const xcb_configure_request_event_t* Event)
 {
-    managed_client& Client = Manage(Event->window);
+    std::cout << "ConfigureRequest" << std::endl;
 
-    // TODO: here!!! only for yet unmanaged
-    if (true) {
+    {
+        xcb_get_window_attributes_cookie_t AtrrCookie = xcb_get_window_attributes(XConn(), Event->window);
+        xcb_get_window_attributes_reply_t* AttrReply = xcb_get_window_attributes_reply(XConn(), AtrrCookie, nullptr);
 
-        // should honor ConfigureRequest as-is here - otherwise some clients won't map
+        xcb_get_property_cookie_t PropCookie = xcb_get_property(XConn(),
+            0,
+            Event->window,
+            Conn._NET_WM_NAME,
+            Conn.UTF8_STRING,
+            0,
+            std::numeric_limits<uint32_t>::max());
+
+        xcb_get_property_reply_t* PropReply = xcb_get_property_reply(XConn(), PropCookie, nullptr);
+        int len = xcb_get_property_value_length(PropReply);
+        const std::string_view Name { (char*)xcb_get_property_value(PropReply), size_t(len) };
+
+        std::println("Name: {}, Width: {}, Height: {}, Window: {}, OverrideRedirect: {}", Name, Event->width, Event->height, Event->window, AttrReply->override_redirect);
+        free(AttrReply);
+        free(PropReply);
+    }
+
+    managed_client* Client = WindowToClient(Event->window);
+#if 0
+    if (!Client) {
+#else
+    if (true)
+    {
+#endif
+        // NOTE(ihor): should honor ConfigureRequest as-is here - otherwise some clients won't map
 
         uint32_t Mask = 0;
         uint32_t Values[7];
         int c = 0;
 
 #define COPY_MASK_MEMBER(MaskMember, EventMember) \
-    do {                                          \
-        if (Event->value_mask & MaskMember) {     \
+    do                                            \
+    {                                             \
+        if (Event->value_mask & MaskMember)       \
+        {                                         \
             Mask |= MaskMember;                   \
             Values[c++] = Event->EventMember;     \
         }                                         \
-    } while (0)
+    }                                             \
+    while (0)
 
         COPY_MASK_MEMBER(XCB_CONFIG_WINDOW_X, x);
         COPY_MASK_MEMBER(XCB_CONFIG_WINDOW_Y, y);
@@ -396,17 +499,25 @@ void window_manager::HandleConfigureRequest(const xcb_configure_request_event_t*
 
         xcb_configure_window(XConn(), Event->window, Mask, Values);
         xcb_flush(XConn());
+
+#if 1
+        Client = Manage(Event->window);
+        // Client->Flags |= managed_client::FlagMapped;
+        Client->CurrentWidth = Event->width;
+        Client->CurrentHeight = Event->height;
+#endif
     }
 }
 
 void window_manager::HandleDestroyNotify(const xcb_destroy_notify_event_t* Event)
 {
+    std::println("DestroyNotify from {}", Event->window);
     ManagedClients.erase(Event->window);
-    Flags |= FlagDirty;
 }
 
 void window_manager::HandleEntryNotify(const xcb_enter_notify_event_t* Event)
 {
+    std::println("EnterNotify");
 }
 
 void window_manager::HandleExpose(const xcb_expose_event_t* event)
@@ -424,8 +535,10 @@ void window_manager::HandleKeyPress(const xcb_key_press_event_t* event)
     auto& keycode = event->detail;
     auto& modifiers = event->state;
 
-    for (const auto& resolved_bind : ResolvedKeybinds) {
-        if (resolved_bind.KeyCode == keycode && resolved_bind.Mods == modifiers) {
+    for (const auto& resolved_bind : ResolvedKeybinds)
+    {
+        if (resolved_bind.KeyCode == keycode && resolved_bind.Mods == modifiers)
+        {
             resolved_bind.Handler(this);
             break;
         }
@@ -440,7 +553,7 @@ void window_manager::HandleMappingNotify(const xcb_mapping_notify_event_t* event
 void window_manager::HandleMapRequest(const xcb_map_request_event_t* Event)
 {
     std::cout << "MapRequest from " << Event->window << std::endl;
-    Manage(Event->window).Flags |= managed_client::FlagMapped;
+    Manage(Event->window)->Flags |= managed_client::FlagMapped;
 }
 
 void window_manager::HandleMotionNotify(const xcb_motion_notify_event_t* event)
@@ -457,13 +570,22 @@ void window_manager::HandleResizeRequest(const xcb_resize_request_event_t* event
     std::cout << "ResizeRequest from " << event->window << std::endl;
 }
 
-void window_manager::HandleUnmapRequest(const xcb_unmap_notify_event_t* event)
+void window_manager::HandleUnmapNotify(const xcb_unmap_notify_event_t* Event)
 {
+    std::println("UnmapNotify from {}", Event->window);
+
+    managed_client* Client = WindowToClient(Event->window);
+    if (Client)
+    {
+        Client->Flags &= ~managed_client::FlagMapped;
+    }
 }
 
 void window_manager::HandleEvent(const xcb_generic_event_t* Event)
 {
-    switch (Event->response_type & ~0x80) {
+    auto EventType = Event->response_type & ~0x80;
+    switch (EventType)
+    {
         case 0:
             HandleError(
                 reinterpret_cast<const xcb_generic_error_t*>(Event));
@@ -477,9 +599,17 @@ void window_manager::HandleEvent(const xcb_generic_event_t* Event)
             HandleClientMessage(
                 reinterpret_cast<const xcb_client_message_event_t*>(Event));
             break;
+        case XCB_MAP_REQUEST:
+            HandleMapRequest(
+                reinterpret_cast<const xcb_map_request_event_t*>(Event));
+            break;
         case XCB_CONFIGURE_REQUEST:
             HandleConfigureRequest(
                 reinterpret_cast<const xcb_configure_request_event_t*>(Event));
+            break;
+        case XCB_CONFIGURE_NOTIFY:
+            break;
+        case XCB_CREATE_NOTIFY:
             break;
         case XCB_DESTROY_NOTIFY:
             HandleDestroyNotify(
@@ -514,8 +644,13 @@ void window_manager::HandleEvent(const xcb_generic_event_t* Event)
                 reinterpret_cast<const xcb_resize_request_event_t*>(Event));
             break;
         case XCB_UNMAP_NOTIFY:
-            HandleUnmapRequest(
+            HandleUnmapNotify(
                 reinterpret_cast<const xcb_unmap_notify_event_t*>(Event));
+            break;
+        default:
+#if 0
+            std::println("unhandled event {}", EventType);
+#endif
             break;
     }
 }

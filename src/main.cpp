@@ -19,12 +19,14 @@ inline constexpr wm::key_bind bindings[] = {
 
 int main(int argc, char* argv[])
 {
-    if (argc == 2 && std::string_view { argv[1] } == "-v") {
+    if (argc == 2 && std::string_view { argv[1] } == "-v")
+    {
         std::cout << "v0.0.1" << std::endl;
         return EXIT_SUCCESS;
     }
 
-    if (argc > 1) {
+    if (argc > 1)
+    {
         std::cout << "usage: " << argv[0] << " [-v]" << std::endl;
         return EXIT_SUCCESS;
     }
@@ -36,7 +38,8 @@ int main(int argc, char* argv[])
 
     wm::window_manager Instance(Config);
 
-    if (!Instance.TryInit()) {
+    if (!Instance.TryInit())
+    {
         putenv(const_cast<char*>("DISPLAY=:1"));
         if (!Instance.TryInit())
             return EXIT_FAILURE;
