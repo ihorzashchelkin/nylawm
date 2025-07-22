@@ -8,9 +8,9 @@
 
 inline constexpr const char* const term_command[] = { "ghostty", nullptr };
 
-inline constexpr xcb_mod_mask_t Mod               = XCB_MOD_MASK_4;
-inline constexpr xcb_mod_mask_t Shift             = XCB_MOD_MASK_SHIFT;
-inline constexpr wm::key_bind   bindings[]        = {
+inline constexpr xcb_mod_mask_t Mod        = XCB_MOD_MASK_4;
+inline constexpr xcb_mod_mask_t Shift      = XCB_MOD_MASK_SHIFT;
+inline constexpr wm::key_bind   bindings[] = {
     // clang-format off
     { Mod,         XK_Return, [](auto x) { x->Spawn(term_command); } },
     { Mod | Shift, XK_Q,      [](auto x) { x->Quit(); } },

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <print>
 #include <span>
 #include <unordered_map>
 #include <utility>
@@ -67,7 +66,7 @@ class window_manager
     static constexpr uint8_t FlagRunning = 1;
     uint8_t                  Flags       = 0;
 
-    uint8_t                                         CurrentWorkspaceId;
+    uint8_t                                          CurrentWorkspaceId;
     std::unordered_map<uint8_t, workspace>           Workspaces;
     std::unordered_map<xcb_window_t, managed_client> ManagedClients;
     xcb_ewmh_connection_t                            Conn;

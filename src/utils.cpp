@@ -8,7 +8,7 @@ void wm::utils::FormatAtomName(std::ostream& out, xcb_ewmh_connection_t& ewmh, c
     if (atom)
     {
         xcb_get_atom_name_cookie_t cookie = xcb_get_atom_name(ewmh.connection, atom);
-        xcb_get_atom_name_reply_t* reply = xcb_get_atom_name_reply(ewmh.connection, cookie, nullptr);
+        xcb_get_atom_name_reply_t* reply  = xcb_get_atom_name_reply(ewmh.connection, cookie, nullptr);
         out << std::string_view { xcb_get_atom_name_name(reply), size_t(xcb_get_atom_name_name_length(reply)) };
         free(reply);
     }
