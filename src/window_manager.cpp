@@ -338,6 +338,7 @@ void window_manager::HandleClientMessage(const xcb_client_message_event_t* Event
     std::cout << "ClientMessage from " << Event->window << std::endl;
 
     managed_client* Client = WindowToClient(Event->window);
+    auto            _      = Client;
 
     if (Event->type == Conn._NET_WM_STATE)
     {
@@ -347,6 +348,7 @@ void window_manager::HandleClientMessage(const xcb_client_message_event_t* Event
 
         if (arg1 == Conn._NET_WM_STATE_HIDDEN && verb == XCB_EWMH_WM_STATE_REMOVE)
         {
+#if 0
             if (Client)
             {
                 Client->Flags |= managed_client::FlagMapped;
@@ -356,6 +358,7 @@ void window_manager::HandleClientMessage(const xcb_client_message_event_t* Event
                 // TODO: what here?
                 xcb_map_window(XConn(), Event->window);
             }
+#endif
 
             // uint32_t stack_vals[] = { XCB_STACK_MODE_ABOVE };
             // xcb_configure_window(xconn(),
