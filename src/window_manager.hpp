@@ -1,8 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <print>
 #include <span>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <unistd.h>
@@ -59,13 +61,33 @@ struct config
 
 class window_manager
 {
+    static constexpr uint8_t FlagRunning = 1;
+    uint8_t Flags = 0;
+
+    uint8_t CurrentWorkspaceId;
+    std::unordered_map<uint8_t, workspace> Workspaces;
+    std::unordered_map<xcb_window_t, managed_client> ManagedClients;
+
+    xcb_ewmh_connection_t Conn;
+    xcb_screen_t* Screen;
+    xcb_errors_context_t* ErrorContext;
+    const config& Config;
+    std::vector<resolved_key_bind> ResolvedKeybinds;
+
 public:
-    explicit window_manager(const config& conf)
-        : Config(conf)
-        , ErrorContext(nullptr)
+    explicit window_manager(const config& Config)
+        : Flags {}
+        , CurrentWorkspaceId {}
+        , Workspaces { std::make_pair(0, workspace {}) }
+        , ManagedClients {}
+        , Conn {}
+        , Screen {}
+        , ErrorContext {}
+        , Config { Config }
+        , ResolvedKeybinds {}
     {
     }
-    ~window_manager() { Cleanup(); }
+    ~window_manager();
 
     bool TryInit();
     void Run();
@@ -73,6 +95,17 @@ public:
     void Spawn(const char* const command[]);
 
 private:
+    xcb_connection_t*& XConn() { return Conn.connection; }
+    xcb_window_t RootWindow() { return Screen->root; }
+
+    managed_client* WindowToClient(xcb_window_t Window);
+    managed_client* Manage(xcb_window_t Window);
+
+    void Prepare();
+    void PrepareSpawn();
+    void TryResolveKeyBinds();
+    void GrabKeys();
+
     void HandleEvent(const xcb_generic_event_t* Event);
     void HandleError(const xcb_generic_error_t* Error);
     void HandleButtonPress(const xcb_button_press_event_t* Event);
@@ -89,36 +122,6 @@ private:
     void HandlePropertyNotify(const xcb_property_notify_event_t* Event);
     void HandleResizeRequest(const xcb_resize_request_event_t* Event);
     void HandleUnmapNotify(const xcb_unmap_notify_event_t* Event);
-
-    void Cleanup();
-    void Prepare();
-    void PrepareSpawn();
-
-    managed_client* WindowToClient(xcb_window_t Window);
-    managed_client* Manage(xcb_window_t Window);
-
-    void TryResolveKeyBinds();
-    void GrabKeys();
-
-    static inline constexpr uint8_t FlagRunning = 1;
-    uint8_t Flags = 0;
-
-    uint8_t ActiveWorkspaceId;
-    std::unordered_map<uint8_t, workspace> Workspaces = {
-        { 0, workspace {} }
-    };
-    std::unordered_map<xcb_window_t, managed_client> ManagedClients;
-
-    xcb_ewmh_connection_t Conn;
-    xcb_connection_t*& XConn() { return Conn.connection; }
-
-    xcb_screen_t* Screen;
-    const xcb_window_t& RootWindow() { return Screen->root; }
-
-    xcb_errors_context_t* ErrorContext;
-
-    const config& Config;
-    std::vector<resolved_key_bind> ResolvedKeybinds;
 };
 
 }

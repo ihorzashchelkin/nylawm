@@ -23,18 +23,13 @@
 
 namespace wm {
 
-void window_manager::Cleanup()
+window_manager::~window_manager()
 {
     if (ErrorContext)
         xcb_errors_context_free(ErrorContext);
 
     if (XConn())
-    {
         xcb_disconnect(XConn());
-        // TODO: is this needed?
-        // xcb_ewmh_connection_wipe(&m_ewmh);
-        memset(&Conn, 0, sizeof(Conn));
-    }
 }
 
 bool window_manager::TryInit()
@@ -219,7 +214,7 @@ void window_manager::Run()
         {
             if (Client.Flags & managed_client::FlagMapped)
             {
-                if (Client.WorkspaceId == ActiveWorkspaceId)
+                if (Client.WorkspaceId == CurrentWorkspaceId)
                     ++NumMappedClientsInWorkspace;
 
                 if ((Client.Flags & managed_client::FlagWasMapped) == 0)
@@ -245,8 +240,6 @@ void window_manager::Run()
             int NumCols = std::round(std::sqrt(NumMappedClientsInWorkspace));
             int NumRows = (NumMappedClientsInWorkspace / NumCols) + ((NumMappedClientsInWorkspace % NumCols > 0) ? 1 : 0);
 
-            std::println("{} {} {}", NumCols, NumRows, NumMappedClientsInWorkspace);
-
             uint16_t Width = Screen->width_in_pixels / NumCols;
             uint16_t Height = Screen->height_in_pixels / NumRows;
 
@@ -254,7 +247,7 @@ void window_manager::Run()
             {
                 if (Client.Flags & managed_client::FlagMapped)
                 {
-                    if (Client.WorkspaceId == ActiveWorkspaceId)
+                    if (Client.WorkspaceId == CurrentWorkspaceId)
                     {
                         Client.Width = Width;
                         Client.Height = Height;
@@ -350,7 +343,7 @@ void window_manager::HandleClientMessage(const xcb_client_message_event_t* Event
     {
         const uint32_t& verb = Event->data.data32[0];
         const uint32_t& arg1 = Event->data.data32[1];
-        const uint32_t& arg2 = Event->data.data32[2];
+        // const uint32_t& arg2 = Event->data.data32[2];
 
         if (arg1 == Conn._NET_WM_STATE_HIDDEN && verb == XCB_EWMH_WM_STATE_REMOVE)
         {
@@ -458,19 +451,17 @@ void window_manager::HandleConfigureRequest(const xcb_configure_request_event_t*
         int len = xcb_get_property_value_length(PropReply);
         const std::string_view Name { (char*)xcb_get_property_value(PropReply), size_t(len) };
 
+#if 0
         std::println("Name: {}, Width: {}, Height: {}, Window: {}, OverrideRedirect: {}", Name, Event->width, Event->height, Event->window, AttrReply->override_redirect);
+#endif
+
         free(AttrReply);
         free(PropReply);
     }
 
     managed_client* Client = WindowToClient(Event->window);
-#if 0
-    if (!Client) {
-#else
-    if (true)
-    {
-#endif
-        // NOTE(ihor): should honor ConfigureRequest as-is here - otherwise some clients won't map
+    if (!Client)
+    { // NOTE(ihor): should honor ConfigureRequest as-is here - otherwise some clients won't map
 
         uint32_t Mask = 0;
         uint32_t Values[7];
