@@ -438,6 +438,7 @@ void window_manager::HandleConfigureRequest(const xcb_configure_request_event_t*
 {
     std::cout << "ConfigureRequest" << std::endl;
 
+    if (false)
     {
         xcb_get_window_attributes_cookie_t AtrrCookie = xcb_get_window_attributes(XConn(), Event->window);
         xcb_get_window_attributes_reply_t* AttrReply  = xcb_get_window_attributes_reply(XConn(), AtrrCookie, nullptr);
@@ -464,7 +465,7 @@ void window_manager::HandleConfigureRequest(const xcb_configure_request_event_t*
 
     managed_client* Client = WindowToClient(Event->window);
     if (!Client)
-    { // NOTE(ihor): should honor ConfigureRequest as-is here - otherwise some clients won't map
+    {
 
         uint32_t Mask = 0;
         uint32_t Values[7];
