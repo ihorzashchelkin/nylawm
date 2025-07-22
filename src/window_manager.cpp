@@ -48,7 +48,7 @@ bool window_manager::TryInit()
         return false;
     }
 
-    const xcb_setup_t* ConnSetup = xcb_get_setup(XConn());
+    const xcb_setup_t*    ConnSetup  = xcb_get_setup(XConn());
     xcb_screen_iterator_t ScreenIter = xcb_setup_roots_iterator(ConnSetup);
 
     Screen = nullptr;
@@ -145,7 +145,7 @@ void window_manager::Run()
 {
     {
         xcb_query_tree_cookie_t Cookie = xcb_query_tree(XConn(), RootWindow());
-        xcb_query_tree_reply_t* Reply = xcb_query_tree_reply(XConn(), Cookie, nullptr);
+        xcb_query_tree_reply_t* Reply  = xcb_query_tree_reply(XConn(), Cookie, nullptr);
 
         xcb_window_t* Children = xcb_query_tree_children(Reply);
 
@@ -240,7 +240,7 @@ void window_manager::Run()
             int NumCols = std::round(std::sqrt(NumMappedClientsInWorkspace));
             int NumRows = (NumMappedClientsInWorkspace / NumCols) + ((NumMappedClientsInWorkspace % NumCols > 0) ? 1 : 0);
 
-            uint16_t Width = Screen->width_in_pixels / NumCols;
+            uint16_t Width  = Screen->width_in_pixels / NumCols;
             uint16_t Height = Screen->height_in_pixels / NumRows;
 
             for (auto& [Window, Client] : ManagedClients)
@@ -249,7 +249,7 @@ void window_manager::Run()
                 {
                     if (Client.WorkspaceId == CurrentWorkspaceId)
                     {
-                        Client.Width = Width;
+                        Client.Width  = Width;
                         Client.Height = Height;
 
                         i++;
@@ -266,9 +266,9 @@ void window_manager::Run()
                             uint32_t values[] { Client.X, Client.Y, Client.Width, Client.Height };
                             xcb_configure_window(XConn(), Window, mask, values);
 
-                            Client.CurrentX = Client.X;
-                            Client.CurrentY = Client.Y;
-                            Client.CurrentWidth = Client.Width;
+                            Client.CurrentX      = Client.X;
+                            Client.CurrentY      = Client.Y;
+                            Client.CurrentWidth  = Client.Width;
                             Client.CurrentHeight = Client.Height;
                         }
                     }
@@ -324,7 +324,7 @@ void window_manager::PrepareSpawn()
 
     struct sigaction sa;
     sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
+    sa.sa_flags   = 0;
     sa.sa_handler = SIG_DFL;
     sigaction(SIGCHLD, &sa, nullptr);
 }
@@ -437,7 +437,7 @@ void window_manager::HandleConfigureRequest(const xcb_configure_request_event_t*
 
     {
         xcb_get_window_attributes_cookie_t AtrrCookie = xcb_get_window_attributes(XConn(), Event->window);
-        xcb_get_window_attributes_reply_t* AttrReply = xcb_get_window_attributes_reply(XConn(), AtrrCookie, nullptr);
+        xcb_get_window_attributes_reply_t* AttrReply  = xcb_get_window_attributes_reply(XConn(), AtrrCookie, nullptr);
 
         xcb_get_property_cookie_t PropCookie = xcb_get_property(XConn(),
             0,
@@ -448,8 +448,8 @@ void window_manager::HandleConfigureRequest(const xcb_configure_request_event_t*
             std::numeric_limits<uint32_t>::max());
 
         xcb_get_property_reply_t* PropReply = xcb_get_property_reply(XConn(), PropCookie, nullptr);
-        int len = xcb_get_property_value_length(PropReply);
-        const std::string_view Name { (char*)xcb_get_property_value(PropReply), size_t(len) };
+        int                       len       = xcb_get_property_value_length(PropReply);
+        const std::string_view    Name { (char*)xcb_get_property_value(PropReply), size_t(len) };
 
 #if 0
         std::println("Name: {}, Width: {}, Height: {}, Window: {}, OverrideRedirect: {}", Name, Event->width, Event->height, Event->window, AttrReply->override_redirect);
@@ -465,7 +465,7 @@ void window_manager::HandleConfigureRequest(const xcb_configure_request_event_t*
 
         uint32_t Mask = 0;
         uint32_t Values[7];
-        int c = 0;
+        int      c = 0;
 
 #define COPY_MASK_MEMBER(MaskMember, EventMember) \
     do                                            \
@@ -494,7 +494,7 @@ void window_manager::HandleConfigureRequest(const xcb_configure_request_event_t*
 #if 1
         Client = Manage(Event->window);
         // Client->Flags |= managed_client::FlagMapped;
-        Client->CurrentWidth = Event->width;
+        Client->CurrentWidth  = Event->width;
         Client->CurrentHeight = Event->height;
 #endif
     }
@@ -523,7 +523,7 @@ void window_manager::HandleFocusIn(const xcb_focus_in_event_t* event)
 
 void window_manager::HandleKeyPress(const xcb_key_press_event_t* event)
 {
-    auto& keycode = event->detail;
+    auto& keycode   = event->detail;
     auto& modifiers = event->state;
 
     for (const auto& resolved_bind : ResolvedKeybinds)

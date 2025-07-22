@@ -24,15 +24,15 @@ using action = void (*)(window_manager*);
 struct key_bind
 {
     uint16_t Mods;
-    int KeySym;
-    action Handler;
+    int      KeySym;
+    action   Handler;
 };
 
 struct resolved_key_bind
 {
-    uint16_t Mods;
+    uint16_t      Mods;
     xcb_keycode_t KeyCode;
-    action Handler;
+    action        Handler;
 };
 
 struct workspace
@@ -41,38 +41,40 @@ struct workspace
 
 struct managed_client
 {
-    static inline constexpr uint8_t FlagWasMapped = 1;
-    static inline constexpr uint8_t FlagMapped = 1 << 1;
-    uint8_t Flags;
+    static constexpr uint8_t FlagWasMapped = 1;
+    static constexpr uint8_t FlagMapped    = 1 << 1;
+    uint8_t                  Flags;
 
-    uint8_t WorkspaceId;
-
-    uint16_t X, CurrentX;
-    uint16_t Y, CurrentY;
-    uint16_t Width, CurrentWidth;
-    uint16_t Height, CurrentHeight;
+    uint8_t  WorkspaceId;
+    uint16_t X;
+    uint16_t CurrentX;
+    uint16_t Y;
+    uint16_t CurrentY;
+    uint16_t Width;
+    uint16_t CurrentWidth;
+    uint16_t Height;
+    uint16_t CurrentHeight;
 };
 
 struct config
 {
-    bool DebugLog;
+    bool                      DebugLog;
     std::span<const key_bind> Bindings;
 };
 
 class window_manager
 {
     static constexpr uint8_t FlagRunning = 1;
-    uint8_t Flags = 0;
+    uint8_t                  Flags       = 0;
 
-    uint8_t CurrentWorkspaceId;
-    std::unordered_map<uint8_t, workspace> Workspaces;
+    uint8_t                                         CurrentWorkspaceId;
+    std::unordered_map<uint8_t, workspace>           Workspaces;
     std::unordered_map<xcb_window_t, managed_client> ManagedClients;
-
-    xcb_ewmh_connection_t Conn;
-    xcb_screen_t* Screen;
-    xcb_errors_context_t* ErrorContext;
-    const config& Config;
-    std::vector<resolved_key_bind> ResolvedKeybinds;
+    xcb_ewmh_connection_t                            Conn;
+    xcb_screen_t*                                    Screen;
+    xcb_errors_context_t*                            ErrorContext;
+    const config&                                    Config;
+    std::vector<resolved_key_bind>                   ResolvedKeybinds;
 
 public:
     explicit window_manager(const config& Config)
@@ -96,7 +98,7 @@ public:
 
 private:
     xcb_connection_t*& XConn() { return Conn.connection; }
-    xcb_window_t RootWindow() { return Screen->root; }
+    xcb_window_t       RootWindow() { return Screen->root; }
 
     managed_client* WindowToClient(xcb_window_t Window);
     managed_client* Manage(xcb_window_t Window);
