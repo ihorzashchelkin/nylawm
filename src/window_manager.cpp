@@ -1,4 +1,5 @@
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
@@ -13,6 +14,7 @@
 #include <vector>
 #include <xcb/composite.h>
 #include <xcb/xcb.h>
+#include <xcb/xcb_aux.h>
 #include <xcb/xcb_errors.h>
 #include <xcb/xcb_ewmh.h>
 #include <xcb/xcb_keysyms.h>
@@ -94,36 +96,32 @@ bool controller::TryInit()
         return false;
     }
 
-    static xcb_atom_t SupportedStates[] = {
-        Conn._NET_WM_STATE_MODAL,
-        Conn._NET_WM_STATE_STICKY,
-        Conn._NET_WM_STATE_MAXIMIZED_VERT,
-        Conn._NET_WM_STATE_MAXIMIZED_HORZ,
-        Conn._NET_WM_STATE_SHADED,
-        Conn._NET_WM_STATE_SKIP_TASKBAR,
-        Conn._NET_WM_STATE_SKIP_PAGER,
-        Conn._NET_WM_STATE_HIDDEN,
-        Conn._NET_WM_STATE_FULLSCREEN,
-        Conn._NET_WM_STATE_ABOVE,
-        Conn._NET_WM_STATE_BELOW,
-        Conn._NET_WM_STATE_DEMANDS_ATTENTION,
-    };
-    xcb_ewmh_set_supported(&Conn, ScreenNumber, std::size(SupportedStates), SupportedStates);
+    xcb_flush(GetConn());
 
-    xcb_composite_redirect_subwindows(GetConn(), GetRoot(), XCB_COMPOSITE_REDIRECT_AUTOMATIC);
-    GraphicsContext = xcb_generate_id(GetConn());
-    xcb_create_gc(GetConn(), GraphicsContext, GetRoot(), XCB_GC_FOREGROUND | XCB_GC_BACKGROUND, (uint32_t[]) { 0, 0 });
+    xcb_composite_redirect_subwindows(GetConn(), GetRoot(), XCB_COMPOSITE_REDIRECT_MANUAL);
+    xcb_flush(GetConn());
 
-    for (auto& Desktop : Desktops)
+    xcb_window_t CompositorWindow = xcb_generate_id(GetConn());
+    if (xcb_generic_error_t* err; (err = xcb_request_check(GetConn(),
+                                       xcb_create_window_checked(
+                                           GetConn(),
+                                           XCB_COPY_FROM_PARENT,
+                                           CompositorWindow,
+                                           GetRoot(),
+                                           0, 0,
+                                           Screen->width_in_pixels,
+                                           Screen->height_in_pixels,
+                                           0,
+                                           XCB_WINDOW_CLASS_INPUT_OUTPUT,
+                                           Screen->root_visual,
+                                           XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK,
+                                           (uint32_t[]) { 0, 1, XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_STRUCTURE_NOTIFY }))))
     {
-        xcb_create_pixmap(GetConn(),
-            Screen->root_depth,
-            Desktop.Pixmap = xcb_generate_id(GetConn()),
-            GetRoot(),
-            Screen->width_in_pixels,
-            Screen->height_in_pixels);
+        std::println(std::cerr, "could not create compositor window");
+        return XCB_NONE;
     }
 
+    xcb_map_window(GetConn(), CompositorWindow);
     xcb_flush(GetConn());
 
     return true;
@@ -443,15 +441,11 @@ client& controller::Manage(xcb_window_t Win)
     if (Clients.contains(Win))
         return Clients.at(Win);
 
-    uint32_t Pixmap = xcb_generate_id(GetConn());
-    xcb_create_pixmap(GetConn(), 24, Pixmap, GetRoot(), 2000, 2000); // TODO:
-    xcb_composite_name_window_pixmap(GetConn(), Win, Pixmap);
-
     return Clients
         .emplace(std::pair {
             Win,
             client {
-                .Pixmap       = Pixmap,
+                .Pixmap       = 0,
                 .DesktopIndex = CurDesktopIndex } })
         .first->second;
 }
@@ -523,6 +517,21 @@ void controller::HandleConfigureRequest(const xcb_configure_request_event_t* Eve
     }
 }
 
+void controller::HandleConfigureNotify(const xcb_configure_notify_event_t* Event)
+{
+    auto* Client = GetClient(Event->window);
+    if (Client)
+    {
+        if (Client->Pixmap)
+            xcb_free_pixmap(GetConn(), Client->Pixmap);
+        Client->Pixmap = xcb_generate_id(GetConn());
+        xcb_composite_name_window_pixmap(GetConn(), Event->window, Client->Pixmap);
+        xcb_flush(GetConn());
+
+        std::println("HandleConfigureNotify composite step");
+    }
+}
+
 void controller::HandleDestroyNotify(const xcb_destroy_notify_event_t* Event)
 {
     std::println("DestroyNotify from {}", Event->window);
@@ -559,20 +568,30 @@ void controller::HandleKeyPress(const xcb_key_press_event_t* event)
     }
 }
 
-void controller::HandleMappingNotify(const xcb_mapping_notify_event_t* event)
+void controller::HandleMappingNotify(const xcb_mapping_notify_event_t* Event)
 {
     // if (Config.DebugLog)
     //     std::cout << "MappingNotify" << std::endl;
+    //
+
+    // TODO: keyboard stuff here!
 }
 
 void controller::HandleMapRequest(const xcb_map_request_event_t* Event)
 {
-    if (Config.DebugLog)
-        std::println("MapRequest from {}", Event->window);
+    xcb_map_window(GetConn(), Event->window);
+    xcb_flush(GetConn());
+}
 
+void controller::HandleMapNotify(const xcb_map_notify_event_t* Event)
+{
     auto& Client = Manage(Event->window);
     Client.Flags |= client::FlagMapped;
-    xcb_map_window(GetConn(), Event->window);
+
+    if (Client.Pixmap)
+        xcb_free_pixmap(GetConn(), Client.Pixmap);
+    Client.Pixmap = xcb_generate_id(GetConn());
+    xcb_composite_name_window_pixmap(GetConn(), Event->window, Client.Pixmap);
     xcb_flush(GetConn());
 }
 
@@ -609,69 +628,58 @@ void controller::HandleEvent(const xcb_generic_event_t* Event)
     switch (EventType)
     {
         case 0:
-            HandleError(
-                reinterpret_cast<const xcb_generic_error_t*>(Event));
+            HandleError(reinterpret_cast<const xcb_generic_error_t*>(Event));
             break;
 
         case XCB_BUTTON_PRESS:
-            HandleButtonPress(
-                reinterpret_cast<const xcb_button_press_event_t*>(Event));
+            HandleButtonPress(reinterpret_cast<const xcb_button_press_event_t*>(Event));
             break;
         case XCB_CLIENT_MESSAGE:
-            HandleClientMessage(
-                reinterpret_cast<const xcb_client_message_event_t*>(Event));
+            HandleClientMessage(reinterpret_cast<const xcb_client_message_event_t*>(Event));
             break;
         case XCB_MAP_REQUEST:
-            HandleMapRequest(
-                reinterpret_cast<const xcb_map_request_event_t*>(Event));
+            HandleMapRequest(reinterpret_cast<const xcb_map_request_event_t*>(Event));
+            break;
+        case XCB_MAP_NOTIFY:
+            HandleMapNotify(reinterpret_cast<const xcb_map_notify_event_t*>(Event));
             break;
         case XCB_CONFIGURE_REQUEST:
-            HandleConfigureRequest(
-                reinterpret_cast<const xcb_configure_request_event_t*>(Event));
-            break;
-        case XCB_MOTION_NOTIFY:
-            HandleMotionNotify(
-                reinterpret_cast<const xcb_motion_notify_event_t*>(Event));
+            HandleConfigureRequest(reinterpret_cast<const xcb_configure_request_event_t*>(Event));
             break;
         case XCB_CONFIGURE_NOTIFY:
+            HandleConfigureNotify(reinterpret_cast<const xcb_configure_notify_event_t*>(Event));
+            break;
+        case XCB_MOTION_NOTIFY:
+            HandleMotionNotify(reinterpret_cast<const xcb_motion_notify_event_t*>(Event));
             break;
         case XCB_CREATE_NOTIFY:
             break;
         case XCB_DESTROY_NOTIFY:
-            HandleDestroyNotify(
-                reinterpret_cast<const xcb_destroy_notify_event_t*>(Event));
+            HandleDestroyNotify(reinterpret_cast<const xcb_destroy_notify_event_t*>(Event));
             break;
         case XCB_ENTER_NOTIFY:
-            HandleEntryNotify(
-                reinterpret_cast<const xcb_enter_notify_event_t*>(Event));
+            HandleEntryNotify(reinterpret_cast<const xcb_enter_notify_event_t*>(Event));
             break;
         case XCB_EXPOSE:
-            HandleExpose(
-                reinterpret_cast<const xcb_expose_event_t*>(Event));
+            HandleExpose(reinterpret_cast<const xcb_expose_event_t*>(Event));
             break;
         case XCB_FOCUS_IN:
-            HandleFocusIn(
-                reinterpret_cast<const xcb_focus_in_event_t*>(Event));
+            HandleFocusIn(reinterpret_cast<const xcb_focus_in_event_t*>(Event));
             break;
         case XCB_KEY_PRESS:
-            HandleKeyPress(
-                reinterpret_cast<const xcb_key_press_event_t*>(Event));
+            HandleKeyPress(reinterpret_cast<const xcb_key_press_event_t*>(Event));
             break;
         case XCB_MAPPING_NOTIFY:
-            HandleMappingNotify(
-                reinterpret_cast<const xcb_mapping_notify_event_t*>(Event));
+            HandleMappingNotify(reinterpret_cast<const xcb_mapping_notify_event_t*>(Event));
             break;
         case XCB_PROPERTY_NOTIFY:
-            HandlePropertyNotify(
-                reinterpret_cast<const xcb_property_notify_event_t*>(Event));
+            HandlePropertyNotify(reinterpret_cast<const xcb_property_notify_event_t*>(Event));
             break;
         case XCB_RESIZE_REQUEST:
-            HandleResizeRequest(
-                reinterpret_cast<const xcb_resize_request_event_t*>(Event));
+            HandleResizeRequest(reinterpret_cast<const xcb_resize_request_event_t*>(Event));
             break;
         case XCB_UNMAP_NOTIFY:
-            HandleUnmapNotify(
-                reinterpret_cast<const xcb_unmap_notify_event_t*>(Event));
+            HandleUnmapNotify(reinterpret_cast<const xcb_unmap_notify_event_t*>(Event));
             break;
 #if 0
         default:

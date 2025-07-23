@@ -12,11 +12,15 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
 add_executable(${PROJECT_NAME})
 
 target_link_libraries(${PROJECT_NAME}
+    GL
     xcb
     xcb-errors
     xcb-keysyms
     xcb-ewmh
     xcb-composite
+    xcb-util
+    xcb-randr
+    xcb-damage
 )
 
 add_subdirectory(src)

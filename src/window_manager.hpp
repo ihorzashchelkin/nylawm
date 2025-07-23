@@ -69,10 +69,11 @@ class controller
     uint8_t                       Flags;
     static inline decltype(Flags) FlagRunning = 1 << 0;
 
-    uint8_t  CurDesktopIndex;
-    uint16_t MouseX;
-    uint16_t MouseY;
-
+    uint8_t                                  CurDesktopIndex;
+    uint16_t                                 MouseX;
+    uint16_t                                 MouseY;
+    xcb_window_t                             CompositorWindow;
+    xcb_window_t                             OverlayWin;
     uint32_t                                 GraphicsContext;
     std::array<desktop, 16>                  Desktops;
     std::unordered_map<xcb_window_t, client> Clients;
@@ -127,6 +128,7 @@ private:
     void HandleButtonPress(const xcb_button_press_event_t* Event);
     void HandleClientMessage(const xcb_client_message_event_t* Event);
     void HandleConfigureRequest(const xcb_configure_request_event_t* Event);
+    void HandleConfigureNotify(const xcb_configure_notify_event_t* Event);
     void HandleDestroyNotify(const xcb_destroy_notify_event_t* Event);
     void HandleEntryNotify(const xcb_enter_notify_event_t* Event);
     void HandleExpose(const xcb_expose_event_t* Event);
@@ -134,6 +136,7 @@ private:
     void HandleKeyPress(const xcb_key_press_event_t* Event);
     void HandleMappingNotify(const xcb_mapping_notify_event_t* Event);
     void HandleMapRequest(const xcb_map_request_event_t* Event);
+    void HandleMapNotify(const xcb_map_notify_event_t* Event);
     void HandleMotionNotify(const xcb_motion_notify_event_t* Event);
     void HandlePropertyNotify(const xcb_property_notify_event_t* Event);
     void HandleResizeRequest(const xcb_resize_request_event_t* Event);
