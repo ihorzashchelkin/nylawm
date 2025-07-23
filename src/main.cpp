@@ -10,10 +10,13 @@ inline constexpr const char* const term_command[] = { "ghostty", nullptr };
 
 inline constexpr xcb_mod_mask_t Mod        = XCB_MOD_MASK_4;
 inline constexpr xcb_mod_mask_t Shift      = XCB_MOD_MASK_SHIFT;
-inline constexpr wm::key_bind   bindings[] = {
+inline constexpr wm::keybind   bindings[] = {
     // clang-format off
     { Mod,         XK_Return, [](auto x) { x->Spawn(term_command); } },
     { Mod | Shift, XK_Q,      [](auto x) { x->Quit(); } },
+    { Mod,         XK_C,      [](auto x) { x->Kill(); } },
+    { Mod,         XK_U,      [](auto x) { x->SwitchToPrevWorkspace(); } },
+    { Mod,         XK_I,      [](auto x) { x->SwitchToNextWorkspace(); } },
     // clang-format on
 };
 
@@ -36,7 +39,7 @@ int main(int argc, char* argv[])
         .Bindings = { bindings, std::size(bindings) },
     };
 
-    wm::window_manager Instance(Config);
+    wm::controller Instance(Config);
 
     if (!Instance.TryInit())
     {

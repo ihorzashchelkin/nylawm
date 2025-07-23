@@ -4,8 +4,8 @@ build: configure
 	cmake --build build
 
 configure:
-	cmake -B build .
-	#cmake -DCMAKE_BUILD_TYPE=Debug -B build .
+	#cmake -B build .
+	cmake -DCMAKE_BUILD_TYPE=Debug -B build .
 	mv build/compile_commands.json .
 
 clean:

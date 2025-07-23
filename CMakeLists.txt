@@ -16,6 +16,7 @@ target_link_libraries(${PROJECT_NAME}
     xcb-errors
     xcb-keysyms
     xcb-ewmh
+    xcb-composite
 )
 
 add_subdirectory(src)
