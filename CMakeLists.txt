@@ -13,6 +13,8 @@ add_executable(${PROJECT_NAME})
 
 target_link_libraries(${PROJECT_NAME}
     GL
+    X11
+    X11-xcb
     xcb
     xcb-errors
     xcb-keysyms
