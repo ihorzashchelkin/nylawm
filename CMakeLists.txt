@@ -11,6 +11,8 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
 
 add_executable(${PROJECT_NAME})
 
+target_include_directories(${PROJECT_NAME} PUBLIC include/)
+
 target_link_libraries(${PROJECT_NAME}
     GL
     X11
