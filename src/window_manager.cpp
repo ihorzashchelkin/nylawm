@@ -1,282 +1,212 @@
-#include <cmath>
-#include <cstddef>
-#include <cstdint>
-#include <cstdlib>
+#include <csignal>
 #include <iostream>
+#include <print>
+#include <span>
 
 #include <fcntl.h>
+#include <sys/wait.h>
 #include <unistd.h>
-#include <iterator>
-#include <print>
-#include <string_view>
 
+#include <epoxy/gl.h>
+#include <epoxy/glx.h>
+
+#include <X11/Xlib-xcb.h>
+#include <X11/Xlib.h>
 #include <xcb/composite.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_aux.h>
-#include <xcb/xcb_errors.h>
-#include <xcb/xcb_ewmh.h>
 #include <xcb/xcb_keysyms.h>
 #include <xcb/xproto.h>
-#include <utility>
-#include <vector>
 
-#include "utils.hpp"
-#include "window_manager.hpp"
+#include "internal.hpp"
 
-namespace wm {
+namespace cirnowm {
 
-controller::~controller() {
-  if (ErrorContext)
-    xcb_errors_context_free(ErrorContext);
-
-  if (GetConn())
-    xcb_disconnect(GetConn());
+void GLAPIENTRY
+MessageCallback(GLenum source,
+                GLenum type,
+                GLuint id,
+                GLenum severity,
+                GLsizei length,
+                const GLchar* message,
+                const void* userParam)
+{
+  fprintf(stderr,
+          "GL CALLBACK: %s type = 0x%x, severity = 0x%x, message = %s\n",
+          (type == GL_DEBUG_TYPE_ERROR ? "** GL ERROR **" : ""),
+          type,
+          severity,
+          message);
 }
 
-bool controller::TryInit() {
-  int ScreenNumber;
-  SetConn(xcb_connect(nullptr, &ScreenNumber));
-  if (xcb_connection_has_error(GetConn())) {
-    std::cerr << "could not connect to X server" << std::endl;
-    return false;
+WindowManager::WindowManager(std::span<const Keybind> aKeybinds)
+  : mFlags{}
+  , mDisplay{}
+  , mEwmh{}
+  , mCompositorWindow{}
+{
+  mDisplay = XOpenDisplay(nullptr);
+  if (!mDisplay) {
+    std::println(std::cerr, "could not open display");
+    return;
   }
 
-  if (xcb_errors_context_new(GetConn(), &ErrorContext)) {
-    std::cerr << "could not create error context" << std::endl;
-    return false;
+  mEwmh = { .connection = XGetXCBConnection(mDisplay) };
+  XSetEventQueueOwner(mDisplay, XCBOwnsEventQueue);
+
+  mCompositorWindow = xcb_generate_id(mEwmh.connection);
+
+  if (!xcb_ewmh_init_atoms_replies(
+        &mEwmh, xcb_ewmh_init_atoms(mEwmh.connection, &mEwmh), nullptr)) {
+    std::println(std::cerr, "could not intern ewmh atoms");
+    return;
   }
 
-  const xcb_setup_t* ConnSetup = xcb_get_setup(GetConn());
-  xcb_screen_iterator_t ScreenIter = xcb_setup_roots_iterator(ConnSetup);
-
-  Screen = nullptr;
-  for (int i = 0; ScreenIter.rem && i <= ScreenNumber;
-       xcb_screen_next(&ScreenIter), i++) {
-    if (i == ScreenNumber)
-      Screen = ScreenIter.data;
+  mScreenNumber = DefaultScreen(mDisplay);
+  mScreen = xcb_aux_get_screen(mEwmh.connection, mScreenNumber);
+  if (!mScreen) {
+    std::println(std::cerr, "could not get screen {}", mScreenNumber);
+    return;
   }
 
-  if (!Screen) {
-    std::cerr << "could not find screen: " << ScreenNumber << std::endl;
-    return false;
+  if (xcb_errors_context_new(mEwmh.connection, &mErrorContext)) {
+    std::println(std::cerr, "could not create error context");
+    return;
   }
 
-  static constexpr uint32_t RootEventMask =
-      XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
-      XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_PROPERTY_CHANGE |
-      XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_BUTTON_PRESS |
-      XCB_EVENT_MASK_BUTTON_RELEASE | XCB_EVENT_MASK_POINTER_MOTION |
-      XCB_EVENT_MASK_KEY_PRESS | XCB_EVENT_MASK_KEY_RELEASE;
-  xcb_void_cookie_t Cookie = xcb_change_window_attributes_checked(
-      GetConn(), GetRoot(), XCB_CW_EVENT_MASK, &RootEventMask);
+  static const uint32_t kRootEventMask =
+    XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
+    XCB_EVENT_MASK_PROPERTY_CHANGE | XCB_EVENT_MASK_EXPOSURE |
+    XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE |
+    XCB_EVENT_MASK_POINTER_MOTION | XCB_EVENT_MASK_KEY_PRESS |
+    XCB_EVENT_MASK_KEY_RELEASE;
+  if (xcb_request_check(
+        mEwmh.connection,
+        xcb_change_window_attributes_checked(mEwmh.connection,
+                                             mScreen->root,
+                                             XCB_CW_EVENT_MASK,
+                                             &kRootEventMask))) {
 
-  xcb_generic_error_t* Error = xcb_request_check(GetConn(), Cookie);
-  if (Error) {
-    utils::PrintXCBError(std::cerr, ErrorContext, Error);
-
-    if (Error->error_code == 10)  // Bad Access
-      std::cerr << "is another wm already running?" << std::endl;
-
-    return false;
+    std::println("could not change root window attributes. is another wm "
+                 "already running?");
+    return;
   }
 
-  xcb_intern_atom_cookie_t* InternAtomsCookie =
-      xcb_ewmh_init_atoms(Conn.connection, &Conn);
-  if (!xcb_ewmh_init_atoms_replies(&Conn, InternAtomsCookie,
-                                   (xcb_generic_error_t**)0)) {
-    std::cerr << "could not intern ewmh atoms" << std::endl;
-    return false;
+  // clang-format off
+  static const int kVisualAttribs[] =
+  {
+    GLX_X_RENDERABLE,         True,
+    GLX_DRAWABLE_TYPE,        GLX_WINDOW_BIT,
+    GLX_RENDER_TYPE,          GLX_RGBA_BIT,
+    GLX_X_VISUAL_TYPE,        GLX_TRUE_COLOR,
+    GLX_RED_SIZE,             8,
+    GLX_GREEN_SIZE,           8,
+    GLX_BLUE_SIZE,            8,
+    GLX_ALPHA_SIZE,           8,
+    GLX_DEPTH_SIZE,           24,
+    GLX_STENCIL_SIZE,         8,
+    GLX_DOUBLEBUFFER,         True,
+    // GLX_SAMPLE_BUFFERS,    1,
+    // GLX_SAMPLES,           4,
+    None
+  };
+  // clang-format on
+
+  int numFbConfigs;
+  GLXFBConfig* fbConfigs =
+    glXChooseFBConfig(mDisplay, mScreenNumber, kVisualAttribs, &numFbConfigs);
+  if (!fbConfigs || !numFbConfigs) {
+    std::println(std::cerr, "glXGetFBConfigs failed");
+    return;
   }
 
-  xcb_flush(GetConn());
+  GLXFBConfig fbConfig =
+    *std::max_element(fbConfigs, fbConfigs + numFbConfigs, [&](auto a, auto b) {
+      int sa, sb;
+      glXGetFBConfigAttrib(mDisplay, a, GLX_SAMPLES, &sa);
+      glXGetFBConfigAttrib(mDisplay, b, GLX_SAMPLES, &sb);
+      return sa < sb;
+    });
+  XFree(fbConfigs);
 
-  xcb_composite_redirect_subwindows(GetConn(), GetRoot(),
-                                    XCB_COMPOSITE_REDIRECT_MANUAL);
-  xcb_flush(GetConn());
+  glXGetFBConfigAttrib(mDisplay, fbConfig, GLX_VISUAL_ID, &mVisualId);
 
-  xcb_window_t CompositorWindow = xcb_generate_id(GetConn());
-  if (xcb_generic_error_t* err;
-      (err = xcb_request_check(
-           GetConn(),
-           xcb_create_window_checked(
-               GetConn(), XCB_COPY_FROM_PARENT, CompositorWindow, GetRoot(), 0,
-               0, Screen->width_in_pixels, Screen->height_in_pixels, 0,
-               XCB_WINDOW_CLASS_INPUT_OUTPUT, Screen->root_visual,
-               XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK,
-               (uint32_t[]){0, 1,
-                            XCB_EVENT_MASK_EXPOSURE |
-                                XCB_EVENT_MASK_STRUCTURE_NOTIFY})))) {
+  mGlxContext = glXCreateNewContext(mDisplay, fbConfig, GLX_RGBA_TYPE, 0, True);
+  if (!mGlxContext) {
+    std::println("glXCreateNewContext failed");
+    return;
+  }
+
+  xcb_colormap_t colormap = xcb_generate_id(mEwmh.connection);
+  xcb_create_colormap(mEwmh.connection,
+                      XCB_COLORMAP_ALLOC_NONE,
+                      colormap,
+                      mScreen->root,
+                      mVisualId);
+
+  if (xcb_request_check(mEwmh.connection,
+                        xcb_create_window_checked(
+                          mEwmh.connection,
+                          XCB_COPY_FROM_PARENT,
+                          mCompositorWindow,
+                          mScreen->root,
+                          0,
+                          0,
+                          mScreen->width_in_pixels,
+                          mScreen->height_in_pixels,
+                          0,
+                          XCB_WINDOW_CLASS_INPUT_OUTPUT,
+                          mVisualId,
+                          XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT |
+                            XCB_CW_EVENT_MASK | XCB_CW_COLORMAP,
+                          (uint32_t[]){ 0,
+                                        1,
+                                        (XCB_EVENT_MASK_EXPOSURE |
+                                         XCB_EVENT_MASK_STRUCTURE_NOTIFY),
+                                        colormap }))) {
     std::println(std::cerr, "could not create compositor window");
-    return XCB_NONE;
+    return;
   }
 
-  xcb_map_window(GetConn(), CompositorWindow);
-  xcb_flush(GetConn());
-
-  return true;
-}
-
-void controller::TryResolveKeyBinds() {
-  xcb_key_symbols_t* Syms = xcb_key_symbols_alloc(GetConn());
-
-  for (const auto& Binding : Config.Bindings) {
-    xcb_keycode_t* KeyCodes = xcb_key_symbols_get_keycode(Syms, Binding.KeySym);
-    if (KeyCodes) {
-      for (int i = 0; *(KeyCodes + i) != XCB_NO_SYMBOL; i++)
-        ResolvedKeybinds.emplace_back(
-            keybind::resolved{Binding.Mods, *(KeyCodes + i), Binding.Handler});
-      free(KeyCodes);
-    }
+  if (xcb_request_check(
+        mEwmh.connection,
+        xcb_map_window_checked(mEwmh.connection, mCompositorWindow))) {
+    std::println(std::cerr, "could not map compositor window");
+    return;
   }
 
-  free(Syms);
-}
+  mGlxWindow = glXCreateWindow(mDisplay, fbConfig, mCompositorWindow, 0);
+  if (!mGlxWindow) {
+    std::println(std::cerr, "glXCreateWindow failed");
+    return;
+  }
 
-void controller::GrabKeys() {
-  for (const auto& ResolvedBind : ResolvedKeybinds)
-    xcb_grab_key(GetConn(), 0, GetRoot(), ResolvedBind.Mods,
-                 ResolvedBind.KeyCode, XCB_GRAB_MODE_ASYNC,
-                 XCB_GRAB_MODE_ASYNC);
-}
+  if (!glXMakeContextCurrent(mDisplay, mGlxWindow, mGlxWindow, mGlxContext)) {
+    std::println(std::cerr, "glXMakeContextCurrent failed");
+    return;
+  }
 
-void controller::SwitchToNextWorkspace() {
-  CurDesktopIndex++;
-  CurDesktopIndex %= Desktops.size();
+  glEnable(GL_DEBUG_OUTPUT);
+  glDebugMessageCallback(MessageCallback, nullptr);
 
-  if (Config.DebugLog)
-    std::println("Switched to desktop {}", CurDesktopIndex);
-}
-
-void controller::SwitchToPrevWorkspace() {
-  CurDesktopIndex--;
-  CurDesktopIndex %= Desktops.size();
-
-  if (Config.DebugLog)
-    std::println("Switched to desktop {}", CurDesktopIndex);
-}
-
-void controller::Run() {
-  if (false) {
-    xcb_query_tree_cookie_t Cookie = xcb_query_tree(GetConn(), GetRoot());
-    xcb_query_tree_reply_t* Reply =
-        xcb_query_tree_reply(GetConn(), Cookie, nullptr);
-
-    xcb_window_t* Children = xcb_query_tree_children(Reply);
-
-    for (int i = 0; i < xcb_query_tree_children_length(Reply); i++) {
-      auto& Child = Children[i];
-
-      Manage(Child);
-
-      xcb_reparent_window(GetConn(), Child, GetRoot(), 0, 0);
+  xcb_key_symbols_t* syms = xcb_key_symbols_alloc(mEwmh.connection);
+  for (const auto& keybind : aKeybinds) {
+    xcb_keycode_t* keycodes = xcb_key_symbols_get_keycode(syms, keybind.keysym);
+    if (!keycodes) {
+      std::println("could not get keycodes for keysym={}", keybind.keysym);
+      continue;
     }
 
-    xcb_flush(GetConn());
-    free(Reply);
+    for (xcb_keycode_t* p = keycodes; *p != XCB_NO_SYMBOL; ++p) {
+      mKeybinds.emplace_back(
+        Keybind::Resolved{ keybind.mods, *p, keybind.action });
+    }
+    free(keycodes);
   }
+  free(syms);
 
-  Prepare();
-  TryResolveKeyBinds();
   GrabKeys();
 
-  Flags |= FlagRunning;
-  do {
-    xcb_generic_event_t* Event = xcb_wait_for_event(GetConn());
-
-    if (Event) {
-      HandleEvent(Event);
-      free(Event);
-
-      constexpr bool ParanoidFlush = false;
-      if (ParanoidFlush)
-        xcb_flush(GetConn());
-    } else {
-      std::cerr << "lost connection to X server" << std::endl;
-      Flags &= ~FlagRunning;
-      break;
-    }
-
-    int NumMappedClientsInWorkspace = 0;
-    for (auto& [Win, Client] : Clients) {
-      if (Client.DesktopIndex == CurDesktopIndex &&
-          (Client.Flags & client::FlagMapped)) {
-        ++NumMappedClientsInWorkspace;
-        continue;
-      }
-    }
-
-    if (NumMappedClientsInWorkspace > 0) {
-      int i = -1;
-
-      int NumRows = std::round(std::sqrt(NumMappedClientsInWorkspace));
-      int NumCols = (NumMappedClientsInWorkspace / NumRows) +
-                    ((NumMappedClientsInWorkspace % NumRows > 0) ? 1 : 0);
-
-      uint16_t Width = Screen->width_in_pixels / NumCols;
-      uint16_t Height = Screen->height_in_pixels / NumRows;
-
-      for (auto& [Win, Client] : Clients) {
-        if (Client.DesktopIndex == CurDesktopIndex) {
-          // if (Client.Flags & client::FlagMapped)
-          {
-            Client.Width = Width;
-            Client.Height = Height;
-
-            i++;
-            Client.X = (i % NumCols) * Width;
-            Client.Y = (i / NumCols) * Height;
-
-            if (Client.X != Client.CurrentX || Client.Y != Client.CurrentY ||
-                Client.Width != Client.CurrentWidth ||
-                Client.Height != Client.CurrentHeight) {
-              uint32_t mask = XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y |
-                              XCB_CONFIG_WINDOW_WIDTH |
-                              XCB_CONFIG_WINDOW_HEIGHT;
-              uint32_t values[]{Client.X, Client.Y, Client.Width,
-                                Client.Height};
-              xcb_configure_window(GetConn(), Win, mask, values);
-
-              Client.CurrentX = Client.X;
-              Client.CurrentY = Client.Y;
-              Client.CurrentWidth = Client.Width;
-              Client.CurrentHeight = Client.Height;
-            }
-
-            if (MouseX >= Client.X && MouseX <= Client.X + Client.Width &&
-                MouseX >= Client.Y && MouseY <= Client.Y + Client.Height)
-              Desktops[CurDesktopIndex].ActiveWin = Win;
-          }
-
-#if 0
-                    xcb_composite_name_window_pixmap(GetConn(), Win, Client.Pixmap);
-                    xcb_copy_area(GetConn(),
-                        Client.Pixmap,
-                        GetCurDesktop().Pixmap,
-                        GraphicsContext,
-                        0, 0,
-                        Client.X, Client.Y,
-                        Client.Width, Client.Height);
-#endif
-        }
-      }
-    }
-
-    xcb_flush(GetConn());
-  } while (Flags & FlagRunning);
-}
-
-void controller::Spawn(const char* const command[]) {
-  if (fork() == 0) {
-    PrepareSpawn();
-    execvp(command[0], const_cast<char**>(command));
-    std::cerr << "execvp failed" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
-}
-
-void controller::Kill() {}
-
-void controller::Prepare() {
   struct sigaction sa;
   sigemptyset(&sa.sa_mask);
   sa.sa_handler = SIG_IGN;
@@ -284,22 +214,64 @@ void controller::Prepare() {
 
   while (waitpid(-1, nullptr, WNOHANG) > 0)
     ;
+
+  mFlags.set(Flag_Init);
 }
 
-void controller::PrepareSpawn() {
-  close(xcb_get_file_descriptor(GetConn()));
+void
+WindowManager::GrabKeys()
+{
+  for (const auto& keybind : mKeybinds)
+    xcb_grab_key(mEwmh.connection,
+                 0,
+                 mScreen->root,
+                 keybind.mods,
+                 keybind.keycode,
+                 XCB_GRAB_MODE_ASYNC,
+                 XCB_GRAB_MODE_ASYNC);
 
-  constexpr bool RedirectSpawnSTDIO = true;
-  if (RedirectSpawnSTDIO) {
-    int dev_null_fd = open("/dev/null", O_RDONLY);
-    dup2(dev_null_fd, STDIN_FILENO);
-    close(dev_null_fd);
+  xcb_flush(mEwmh.connection);
+}
 
-    dev_null_fd = open("/dev/null", O_WRONLY);
-    dup2(dev_null_fd, STDOUT_FILENO);
-    dup2(dev_null_fd, STDERR_FILENO);
-    close(dev_null_fd);
+void
+WindowManager::Run()
+{
+  mFlags.set(Flag_Running);
+
+  while (IsRunning()) {
+    xcb_generic_event_t* event = xcb_wait_for_event(mEwmh.connection);
+    if (!event) {
+      std::println(std::cerr, "lost connection to X server");
+      mFlags.reset(Flag_Running);
+      break;
+    }
+
+    HandleEvent(event);
+    free(event);
+
+    // TODO:
+    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glXSwapBuffers(mDisplay, mGlxWindow);
   }
+}
+
+void
+WindowManager::Spawn(const char* const aCommand[])
+{
+  if (fork() != 0)
+    return;
+
+  close(xcb_get_file_descriptor(mEwmh.connection));
+
+  int dev_null_fd = open("/dev/null", O_RDONLY);
+  dup2(dev_null_fd, STDIN_FILENO);
+  close(dev_null_fd);
+
+  dev_null_fd = open("/dev/null", O_WRONLY);
+  dup2(dev_null_fd, STDOUT_FILENO);
+  dup2(dev_null_fd, STDERR_FILENO);
+  close(dev_null_fd);
 
   setsid();
 
@@ -308,11 +280,18 @@ void controller::PrepareSpawn() {
   sa.sa_flags = 0;
   sa.sa_handler = SIG_DFL;
   sigaction(SIGCHLD, &sa, nullptr);
+
+  execvp(aCommand[0], const_cast<char**>(aCommand));
+  std::println("execvp failed");
+  std::exit(EXIT_FAILURE);
+}
 }
 
-void controller::HandleButtonPress(const xcb_button_press_event_t* event) {}
+#if 0
 
-void controller::HandleClientMessage(const xcb_client_message_event_t* Event) {
+void
+controller::HandleClientMessage(const xcb_client_message_event_t* Event)
+{
   std::cout << "ClientMessage from " << Event->window << std::endl;
 
   client* Client = GetClient(Event->window);
@@ -392,26 +371,33 @@ void controller::HandleClientMessage(const xcb_client_message_event_t* Event) {
 #endif
 }
 
-void controller::HandleError(const xcb_generic_error_t* Error) {
+void
+controller::HandleError(const xcb_generic_error_t* Error)
+{
   utils::PrintXCBError(std::cerr, ErrorContext, Error);
 }
 
-client* controller::GetClient(xcb_window_t Window) {
+client*
+controller::GetClient(xcb_window_t Window)
+{
   return Clients.contains(Window) ? &Clients.at(Window) : nullptr;
 }
 
-client& controller::Manage(xcb_window_t Win) {
+client&
+controller::Manage(xcb_window_t Win)
+{
   if (Clients.contains(Win))
     return Clients.at(Win);
 
   return Clients
-      .emplace(
-          std::pair{Win, client{.Pixmap = 0, .DesktopIndex = CurDesktopIndex}})
-      .first->second;
+    .emplace(
+      std::pair{ Win, client{ .Pixmap = 0, .DesktopIndex = CurDesktopIndex } })
+    .first->second;
 }
 
-void controller::HandleConfigureRequest(
-    const xcb_configure_request_event_t* Event) {
+void
+controller::HandleConfigureRequest(const xcb_configure_request_event_t* Event)
+{
   std::println("ConfigureRequest from {}", Event->window);
 
 #if 0
@@ -439,41 +425,12 @@ void controller::HandleConfigureRequest(
 #endif
 
   if (!GetClient(Event->window)) {
-    uint32_t Mask = 0;
-    uint32_t Values[7];
-    int c = 0;
-
-#define COPY_MASK_MEMBER(MaskMember, EventMember) \
-  do {                                            \
-    if (Event->value_mask & MaskMember) {         \
-      Mask |= MaskMember;                         \
-      Values[c++] = Event->EventMember;           \
-    }                                             \
-  } while (0)
-
-    COPY_MASK_MEMBER(XCB_CONFIG_WINDOW_X, x);
-    COPY_MASK_MEMBER(XCB_CONFIG_WINDOW_Y, y);
-    COPY_MASK_MEMBER(XCB_CONFIG_WINDOW_WIDTH, width);
-    COPY_MASK_MEMBER(XCB_CONFIG_WINDOW_HEIGHT, height);
-    COPY_MASK_MEMBER(XCB_CONFIG_WINDOW_BORDER_WIDTH, border_width);
-    COPY_MASK_MEMBER(XCB_CONFIG_WINDOW_SIBLING, sibling);
-    COPY_MASK_MEMBER(XCB_CONFIG_WINDOW_STACK_MODE, stack_mode);
-
-#undef COPY_MASK_MEMBER
-
-    xcb_configure_window(GetConn(), Event->window, Mask, Values);
-    xcb_flush(GetConn());
-
-    auto& Client = Manage(Event->window);
-    Client.CurrentWidth = Event->width;
-    Client.CurrentHeight = Event->height;
-    Client.CurrentX = 0;
-    Client.CurrentY = 0;
   }
 }
 
-void controller::HandleConfigureNotify(
-    const xcb_configure_notify_event_t* Event) {
+void
+controller::HandleConfigureNotify(const xcb_configure_notify_event_t* Event)
+{
   auto* Client = GetClient(Event->window);
   if (Client) {
     if (Client->Pixmap)
@@ -486,24 +443,34 @@ void controller::HandleConfigureNotify(
   }
 }
 
-void controller::HandleDestroyNotify(const xcb_destroy_notify_event_t* Event) {
+void
+controller::HandleDestroyNotify(const xcb_destroy_notify_event_t* Event)
+{
   std::println("DestroyNotify from {}", Event->window);
   Clients.erase(Event->window);
 }
 
-void controller::HandleEntryNotify(const xcb_enter_notify_event_t* Event) {
+void
+controller::HandleEntryNotify(const xcb_enter_notify_event_t* Event)
+{
   std::println("EnterNotify");
 }
 
-void controller::HandleExpose(const xcb_expose_event_t* event) {
+void
+controller::HandleExpose(const xcb_expose_event_t* event)
+{
   std::cout << "Expose from " << event->window << std::endl;
 }
 
-void controller::HandleFocusIn(const xcb_focus_in_event_t* event) {
+void
+controller::HandleFocusIn(const xcb_focus_in_event_t* event)
+{
   std::cout << "FocusIn" << std::endl;
 }
 
-void controller::HandleKeyPress(const xcb_key_press_event_t* event) {
+void
+controller::HandleKeyPress(const xcb_key_press_event_t* event)
+{
   auto& keycode = event->detail;
   auto& modifiers = event->state;
 
@@ -515,15 +482,16 @@ void controller::HandleKeyPress(const xcb_key_press_event_t* event) {
   }
 }
 
-
-
-
-void controller::HandleResizeRequest(const xcb_resize_request_event_t* Event) {
+void
+controller::HandleResizeRequest(const xcb_resize_request_event_t* Event)
+{
   if (Config.DebugLog)
     std::println("ResizeRequest from {}", Event->window);
 }
 
-void controller::HandleUnmapNotify(const xcb_unmap_notify_event_t* Event) {
+void
+controller::HandleUnmapNotify(const xcb_unmap_notify_event_t* Event)
+{
   if (Config.DebugLog)
     std::println("UnmapNotify from {}", Event->window);
 
@@ -531,3 +499,70 @@ void controller::HandleUnmapNotify(const xcb_unmap_notify_event_t* Event) {
   if (Client)
     Client->Flags &= ~(client::FlagMapped);
 }
+
+
+    int NumMappedClientsInWorkspace = 0;
+    for (auto& [Win, Client] : Clients) {
+      if (Client.DesktopIndex == CurDesktopIndex &&
+          (Client.Flags & client::FlagMapped)) {
+        ++NumMappedClientsInWorkspace;
+        continue;
+      }
+    }
+
+    if (NumMappedClientsInWorkspace > 0) {
+      int i = -1;
+
+      int NumRows = std::round(std::sqrt(NumMappedClientsInWorkspace));
+      int NumCols = (NumMappedClientsInWorkspace / NumRows) +
+                    ((NumMappedClientsInWorkspace % NumRows > 0) ? 1 : 0);
+
+      uint16_t Width = Screen->width_in_pixels / NumCols;
+      uint16_t Height = Screen->height_in_pixels / NumRows;
+
+      for (auto& [Win, Client] : Clients) {
+        if (Client.DesktopIndex == CurDesktopIndex) {
+          // if (Client.Flags & client::FlagMapped)
+          {
+            Client.Width = Width;
+            Client.Height = Height;
+
+            i++;
+            Client.X = (i % NumCols) * Width;
+            Client.Y = (i / NumCols) * Height;
+
+            if (Client.X != Client.CurrentX || Client.Y != Client.CurrentY ||
+                Client.Width != Client.CurrentWidth ||
+                Client.Height != Client.CurrentHeight) {
+              uint32_t mask = XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y |
+                              XCB_CONFIG_WINDOW_WIDTH |
+                              XCB_CONFIG_WINDOW_HEIGHT;
+              uint32_t values[]{
+                Client.X, Client.Y, Client.Width, Client.Height
+              };
+              xcb_configure_window(GetConn(), Win, mask, values);
+
+              Client.CurrentX = Client.X;
+              Client.CurrentY = Client.Y;
+              Client.CurrentWidth = Client.Width;
+              Client.CurrentHeight = Client.Height;
+            }
+
+            if (MouseX >= Client.X && MouseX <= Client.X + Client.Width &&
+                MouseX >= Client.Y && MouseY <= Client.Y + Client.Height)
+              Desktops[CurDesktopIndex].ActiveWin = Win;
+          }
+
+#if 0
+                    xcb_composite_name_window_pixmap(GetConn(), Win, Client.Pixmap);
+                    xcb_copy_area(GetConn(),
+                        Client.Pixmap,
+                        GetCurDesktop().Pixmap,
+                        GraphicsContext,
+                        0, 0,
+                        Client.X, Client.Y,
+                        Client.Width, Client.Height);
+#endif
+        }
+
+#endif

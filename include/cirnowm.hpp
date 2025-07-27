@@ -22,23 +22,6 @@ public:
 private:
 };
 
-class controller;
-using action = void (*)(controller*);
-
-struct keybind
-{
-  uint16_t Mods;
-  int KeySym;
-  action Handler;
-
-  struct resolved
-  {
-    uint16_t Mods;
-    xcb_keycode_t KeyCode;
-    action Handler;
-  };
-};
-
 struct desktop
 {
   uint32_t Pixmap;

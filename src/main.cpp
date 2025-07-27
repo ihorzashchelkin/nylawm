@@ -1,52 +1,38 @@
-#include <iostream>
-#include <iterator>
+#include <array>
+#include <cstdlib>
 
-#include "cirnowm.hpp"
+#include "internal.hpp"
 
 #include <X11/keysym.h>
 #include <xcb/xproto.h>
 
-inline constexpr const char *const term_command[] = {"ghostty", nullptr};
+#include "handlers.cpp"
+#include "window_manager.cpp"
 
-inline constexpr xcb_mod_mask_t Mod = XCB_MOD_MASK_4;
-inline constexpr xcb_mod_mask_t Shift = XCB_MOD_MASK_SHIFT;
-inline constexpr cirno::keybind bindings[] = {
-    // clang-format off
-    { Mod,         XK_Return, [](auto x) { x->Spawn(term_command); } },
-    { Mod | Shift, XK_Q,      [](auto x) { x->Quit(); } },
-    { Mod,         XK_C,      [](auto x) { x->Kill(); } },
-    { Mod,         XK_U,      [](auto x) { x->SwitchToPrevWorkspace(); } },
-    { Mod,         XK_I,      [](auto x) { x->SwitchToNextWorkspace(); } },
-    // clang-format on
-};
+inline constexpr const char* const term_command[] = { "ghostty", nullptr };
 
-int main(int argc, char *argv[])
+inline constexpr xcb_mod_mask_t kMod = XCB_MOD_MASK_4;
+inline constexpr xcb_mod_mask_t kShift = XCB_MOD_MASK_SHIFT;
+inline constexpr auto bindings = std::to_array<const cirnowm::Keybind>({
+  // clang-format off
+  { kMod,          XK_Return, [](auto x) { x->Spawn(term_command); } },
+  { kMod | kShift, XK_Q,      [](auto x) { x->Quit(); } },
+  // { kMod,          XK_C,      [](auto x) { x->Kill(); } },
+  // { kMod,          XK_U,      [](auto x) { x->SwitchToPrevWorkspace(); } },
+  // { kMod,          XK_I,      [](auto x) { x->SwitchToNextWorkspace(); } },
+  // clang-format on
+});
+
+int
+main(int argc, char* argv[])
 {
-    if (argc == 2 && std::string_view{argv[1]} == "-v")
-    {
-        std::cout << "v0.0.1" << std::endl;
-        return EXIT_SUCCESS;
-    }
+  putenv(const_cast<char*>("DISPLAY=:1"));
 
-    if (argc > 1)
-    {
-        std::cout << "usage: " << argv[0] << " [-v]" << std::endl;
-        return EXIT_SUCCESS;
-    }
+  cirnowm::WindowManager wm{ bindings };
+  if (!wm)
+    return EXIT_FAILURE;
 
-    constexpr wm::config Config = {
-        .DebugLog = true,
-        .Bindings = {bindings, std::size(bindings)},
-    };
+  wm.SetDebug(true);
 
-    wm::controller Instance(Config);
-
-    if (!Instance.TryInit())
-    {
-        putenv(const_cast<char *>("DISPLAY=:1"));
-        if (!Instance.TryInit())
-            return EXIT_FAILURE;
-    }
-
-    Instance.Run();
+  wm.Run();
 }
