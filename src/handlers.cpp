@@ -72,8 +72,8 @@ void
 WindowManager::HandleKeyPress(const xcb_key_press_event_t* aEvent)
 {
   for (auto& keybind : mKeybinds) {
-    if (keybind.keycode == aEvent->detail && keybind.mods == aEvent->state) {
-      keybind.action(this);
+    if (keybind.mKeycode == aEvent->detail && keybind.mMods == aEvent->state) {
+      keybind.mAction(this);
       break;
     }
   }
@@ -137,16 +137,29 @@ WindowManager::HandleMapRequest(const xcb_map_request_event_t* aEvent)
 void
 WindowManager::HandleMapNotify(const xcb_map_notify_event_t* aEvent)
 {
-  xcb_get_window_attributes_reply_t* reply = xcb_get_window_attributes_reply(
-    mEwmh.connection,
-    xcb_get_window_attributes(mEwmh.connection, aEvent->window),
-    nullptr);
-  if (!reply || reply->override_redirect)
-    return;
+  if (IsDebug())
+    std::println(std::clog, "MapNotify from {}", aEvent->window);
 
-  xcb_composite_redirect_window(
-    mEwmh.connection, aEvent->window, XCB_COMPOSITE_REDIRECT_MANUAL);
-  xcb_flush(mEwmh.connection);
+  if (!mClients.contains(aEvent->window)) {
+    xcb_get_window_attributes_reply_t* reply = xcb_get_window_attributes_reply(
+      mEwmh.connection,
+      xcb_get_window_attributes(mEwmh.connection, aEvent->window),
+      nullptr);
+
+    if (!reply || reply->override_redirect)
+      return;
+
+    if (xcb_request_check(
+          mEwmh.connection,
+          xcb_composite_redirect_window_checked(
+            mEwmh.connection, aEvent->window, XCB_COMPOSITE_REDIRECT_MANUAL)))
+      return;
+
+    mClients.emplace(aEvent->window, Client{});
+
+    xcb_pixmap_t pixmap = xcb_generate_id(mEwmh.connection);
+    xcb_composite_name_window_pixmap(mEwmh.connection, aEvent->window, pixmap);
+  }
 }
 
 void

@@ -3,11 +3,13 @@
 #include <bitset>
 #include <cstdint>
 #include <span>
+#include <unordered_map>
 #include <vector>
 
 #include <xcb/xcb.h>
 #include <xcb/xcb_errors.h>
 #include <xcb/xcb_ewmh.h>
+#include <xcb/xproto.h>
 
 typedef struct _XDisplay Display;
 typedef struct __GLXcontextRec* GLXContext;
@@ -19,16 +21,29 @@ using Action = void (*)(WindowManager*);
 
 struct Keybind
 {
-  uint16_t mods;
-  int keysym;
-  Action action;
+  uint16_t mMods;
+  int mKeysyms;
+  Action mActions;
 
   struct Resolved
   {
-    uint16_t mods;
-    xcb_keycode_t keycode;
-    Action action;
+    uint16_t mMods;
+    xcb_keycode_t mKeycode;
+    Action mAction;
   };
+};
+
+struct Client
+{
+  enum
+  {
+    Flag_Count
+  };
+  std::bitset<Flag_Count> mFlags;
+
+  uint32_t mPixmap;
+  uint16_t mX, mY;
+  uint16_t mWidth, mHeight;
 };
 
 class WindowManager
@@ -51,6 +66,7 @@ class WindowManager
   GLXContext mGlxContext;
   uint64_t mGlxWindow;
   int mVisualId;
+  std::unordered_map<xcb_window_t, Client> mClients;
 
 public:
   WindowManager(std::span<const Keybind> aKeyBinds);
@@ -70,31 +86,27 @@ public:
 private:
   void GrabKeys();
 
-  void HandleEvent(const xcb_generic_event_t* aEvent);
   void HandleError(const xcb_generic_error_t* aError);
+  void HandleEvent(const xcb_generic_event_t* aEvent);
 
+  void HandleButtonPress(const xcb_button_press_event_t* aEvent);
+  void HandleButtonRelease(const xcb_button_release_event_t* aEvent);
   void HandleClientMessage(const xcb_client_message_event_t* aEvent);
-  void HandlePropertyNotify(const xcb_property_notify_event_t* aEvent);
-
+  void HandleConfigureNotify(const xcb_configure_notify_event_t* aEvent);
+  void HandleConfigureRequest(const xcb_configure_request_event_t* aEvent);
   void HandleCreateNotify(const xcb_create_notify_event_t* aEvent);
   void HandleDestroyNotify(const xcb_destroy_notify_event_t* aEvent);
   void HandleEnterNotify(const xcb_enter_notify_event_t* aEvent);
   void HandleExpose(const xcb_expose_event_t* aEvent);
   void HandleFocusIn(const xcb_focus_in_event_t* aEvent);
-
-  void HandleConfigureRequest(const xcb_configure_request_event_t* aEvent);
-  void HandleConfigureNotify(const xcb_configure_notify_event_t* aEvent);
-  void HandleResizeRequest(const xcb_resize_request_event_t* aEvent);
-
   void HandleKeyPress(const xcb_key_press_event_t* aEvent);
   void HandleKeyRelease(const xcb_key_release_event_t* aEvent);
-  void HandleButtonPress(const xcb_button_press_event_t* aEvent);
-  void HandleButtonRelease(const xcb_button_release_event_t* aEvent);
-  void HandleMotionNotify(const xcb_motion_notify_event_t* aEvent);
-  void HandleMappingNotify(const xcb_mapping_notify_event_t* aEvent);
-
-  void HandleMapRequest(const xcb_map_request_event_t* aEvent);
   void HandleMapNotify(const xcb_map_notify_event_t* aEvent);
+  void HandleMapRequest(const xcb_map_request_event_t* aEvent);
+  void HandleMappingNotify(const xcb_mapping_notify_event_t* aEvent);
+  void HandleMotionNotify(const xcb_motion_notify_event_t* aEvent);
+  void HandlePropertyNotify(const xcb_property_notify_event_t* aEvent);
+  void HandleResizeRequest(const xcb_resize_request_event_t* aEvent);
   void HandleUnmapNotify(const xcb_unmap_notify_event_t* aEvent);
 };
 

@@ -23,20 +23,20 @@
 namespace cirnowm {
 
 void GLAPIENTRY
-MessageCallback(GLenum source,
-                GLenum type,
-                GLuint id,
-                GLenum severity,
-                GLsizei length,
-                const GLchar* message,
-                const void* userParam)
+GLDebugMessageCallback(GLenum aSource,
+                       GLenum aType,
+                       GLuint aId,
+                       GLenum aSeverity,
+                       GLsizei aLength,
+                       const GLchar* aMessage,
+                       const void* aUserParam)
 {
-  fprintf(stderr,
-          "GL CALLBACK: %s type = 0x%x, severity = 0x%x, message = %s\n",
-          (type == GL_DEBUG_TYPE_ERROR ? "** GL ERROR **" : ""),
-          type,
-          severity,
-          message);
+  std::println(std::cerr,
+               "GL CALLBACK: {} type = {:#x}, severity = {:#x}, message = {}",
+               (aType == GL_DEBUG_TYPE_ERROR ? "** GL ERROR **" : ""),
+               aType,
+               aSeverity,
+               aMessage);
 }
 
 WindowManager::WindowManager(std::span<const Keybind> aKeybinds)
@@ -187,19 +187,19 @@ WindowManager::WindowManager(std::span<const Keybind> aKeybinds)
   }
 
   glEnable(GL_DEBUG_OUTPUT);
-  glDebugMessageCallback(MessageCallback, nullptr);
+  glDebugMessageCallback(GLDebugMessageCallback, nullptr);
 
   xcb_key_symbols_t* syms = xcb_key_symbols_alloc(mEwmh.connection);
   for (const auto& keybind : aKeybinds) {
-    xcb_keycode_t* keycodes = xcb_key_symbols_get_keycode(syms, keybind.keysym);
+    xcb_keycode_t* keycodes = xcb_key_symbols_get_keycode(syms, keybind.mKeysyms);
     if (!keycodes) {
-      std::println("could not get keycodes for keysym={}", keybind.keysym);
+      std::println("could not get keycodes for keysym={}", keybind.mKeysyms);
       continue;
     }
 
     for (xcb_keycode_t* p = keycodes; *p != XCB_NO_SYMBOL; ++p) {
       mKeybinds.emplace_back(
-        Keybind::Resolved{ keybind.mods, *p, keybind.action });
+        Keybind::Resolved{ keybind.mMods, *p, keybind.mActions });
     }
     free(keycodes);
   }
@@ -225,8 +225,8 @@ WindowManager::GrabKeys()
     xcb_grab_key(mEwmh.connection,
                  0,
                  mScreen->root,
-                 keybind.mods,
-                 keybind.keycode,
+                 keybind.mMods,
+                 keybind.mKeycode,
                  XCB_GRAB_MODE_ASYNC,
                  XCB_GRAB_MODE_ASYNC);
 
