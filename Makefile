@@ -1,7 +1,10 @@
-.PHONY: build configure clean run xev xephyr
+.PHONY: build configure clean run xev xephyr shaders
 
-build: configure
+build: configure shaders
 	cmake --build build
+
+shaders:
+	python3 shaders_postprocess.py
 
 configure:
 	#cmake -B build .

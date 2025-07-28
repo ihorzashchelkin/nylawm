@@ -8,6 +8,7 @@
 
 #include "handlers.cpp"
 #include "window_manager.cpp"
+#include "shader_sources.cpp"
 
 inline constexpr const char* const term_command[] = { "ghostty", nullptr };
 

@@ -1,4 +1,5 @@
 #include <csignal>
+#include <cstring>
 #include <iostream>
 #include <print>
 #include <span>
@@ -19,6 +20,7 @@
 #include <xcb/xproto.h>
 
 #include "internal.hpp"
+#include "shader_sources.hpp"
 
 namespace cirnowm {
 
@@ -191,7 +193,8 @@ WindowManager::WindowManager(std::span<const Keybind> aKeybinds)
 
   xcb_key_symbols_t* syms = xcb_key_symbols_alloc(mEwmh.connection);
   for (const auto& keybind : aKeybinds) {
-    xcb_keycode_t* keycodes = xcb_key_symbols_get_keycode(syms, keybind.mKeysyms);
+    xcb_keycode_t* keycodes =
+      xcb_key_symbols_get_keycode(syms, keybind.mKeysyms);
     if (!keycodes) {
       std::println("could not get keycodes for keysym={}", keybind.mKeysyms);
       continue;
@@ -252,6 +255,89 @@ WindowManager::Run()
     // TODO:
     glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
+
+    // clang-format off
+    static float vertices[] = {
+      -0.5, -0.5, 0.0,
+       0.5, -0.5, 0.0,
+       0.0,  0.5, 0.0,
+    };
+    // clang-format on
+
+    static GLuint vao = 0;
+    if (!vao) {
+      glGenVertexArrays(1, &vao);
+    }
+
+    glBindVertexArray(vao);
+
+    static GLuint vbo = 0;
+    if (!vbo) {
+      glGenBuffers(1, &vbo);
+    }
+
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+    static GLuint vertexShader = 0;
+    if (!vertexShader) {
+      vertexShader = glCreateShader(GL_VERTEX_SHADER);
+      glShaderSource(vertexShader, 1, &gVertexShaderSrc, nullptr);
+      glCompileShader(vertexShader);
+
+      int success;
+      glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
+      if (success) {
+        std::println(std::clog, "vertex shader successfully compiled");
+      } else {
+        std::println(std::cerr, "vertex shader compilation failed");
+
+        char infoLog[512];
+        memset(infoLog, 0, sizeof(infoLog));
+        glGetShaderInfoLog(vertexShader, sizeof(infoLog) - 1, nullptr, infoLog);
+        std::println("{}\n\n{}", gVertexShaderSrc, infoLog);
+      }
+    }
+
+    static GLuint fragmentShader = 0;
+    if (!fragmentShader) {
+      fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+      glShaderSource(fragmentShader, 1, &gFragmentShaderSrc, nullptr);
+      glCompileShader(fragmentShader);
+
+      int success;
+      glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
+      if (success) {
+        std::println(std::clog, "fragment shader successfully compiled");
+      } else {
+        std::println(std::cerr, "fragment shader compilation failed");
+      }
+    }
+
+    static GLuint shaderProgram = 0;
+    if (!shaderProgram) {
+      shaderProgram = glCreateProgram();
+      glAttachShader(shaderProgram, vertexShader);
+      glAttachShader(shaderProgram, fragmentShader);
+      glLinkProgram(shaderProgram);
+
+      int success;
+      glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
+      if (success) {
+        std::println(std::clog, "shader program successfully linked");
+        glDeleteShader(vertexShader);
+        glDeleteShader(fragmentShader);
+      } else {
+        std::println(std::cerr, "shader program link failed");
+      }
+    }
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
+    glEnableVertexAttribArray(0);
+
+    glUseProgram(shaderProgram);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+
     glXSwapBuffers(mDisplay, mGlxWindow);
   }
 }
