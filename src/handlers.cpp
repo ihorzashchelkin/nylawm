@@ -157,10 +157,10 @@ WindowManager::HandleMapNotify(const xcb_map_notify_event_t* aEvent)
             mEwmh.connection, aEvent->window, XCB_COMPOSITE_REDIRECT_MANUAL)))
       return;
 
-    mClients.emplace(aEvent->window, Client{});
-
     xcb_pixmap_t pixmap = xcb_generate_id(mEwmh.connection);
     xcb_composite_name_window_pixmap(mEwmh.connection, aEvent->window, pixmap);
+
+    mClients.emplace(aEvent->window, Client{ .mPixmap = pixmap });
 
     // clang-format off
     static const int kPixmapAttribs[] = {

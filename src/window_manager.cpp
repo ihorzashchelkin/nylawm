@@ -1,3 +1,4 @@
+#include <X11/Xutil.h>
 #include <csignal>
 #include <cstring>
 #include <iostream>
@@ -6,6 +7,7 @@
 
 #include <fcntl.h>
 #include <sys/wait.h>
+#include <thread>
 #include <unistd.h>
 
 #include <epoxy/gl.h>
@@ -14,8 +16,10 @@
 #include <X11/Xlib-xcb.h>
 #include <X11/Xlib.h>
 #include <xcb/composite.h>
+#include <xcb/damage.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_aux.h>
+#include <xcb/xcb_errors.h>
 #include <xcb/xcb_keysyms.h>
 #include <xcb/xproto.h>
 
@@ -144,14 +148,14 @@ WindowManager::WindowManager(std::span<const Keybind> aKeybinds)
     });
   XFree(fbConfigs);
 
-  glXGetFBConfigAttrib(mDisplay, mFbConfig, GLX_VISUAL_ID, &mVisualId);
-
   mGlxContext =
     glXCreateNewContext(mDisplay, mFbConfig, GLX_RGBA_TYPE, 0, True);
   if (!mGlxContext) {
     std::println("glXCreateNewContext failed");
     return;
   }
+
+  mVisualId = glXGetVisualFromFBConfig(mDisplay, mFbConfig)->visualid;
 
   xcb_colormap_t colormap = xcb_generate_id(mEwmh.connection);
   xcb_create_colormap(mEwmh.connection,
@@ -160,27 +164,32 @@ WindowManager::WindowManager(std::span<const Keybind> aKeybinds)
                       mScreen->root,
                       mVisualId);
 
-  if (xcb_request_check(mEwmh.connection,
-                        xcb_create_window_checked(
-                          mEwmh.connection,
-                          XCB_COPY_FROM_PARENT,
-                          mCompositorWindow,
-                          mScreen->root,
-                          0,
-                          0,
-                          mScreen->width_in_pixels,
-                          mScreen->height_in_pixels,
-                          0,
-                          XCB_WINDOW_CLASS_INPUT_OUTPUT,
-                          mVisualId,
-                          XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT |
-                            XCB_CW_EVENT_MASK | XCB_CW_COLORMAP,
-                          (uint32_t[]){ 0,
-                                        1,
-                                        (XCB_EVENT_MASK_EXPOSURE |
-                                         XCB_EVENT_MASK_STRUCTURE_NOTIFY),
-                                        colormap }))) {
-    std::println(std::cerr, "could not create compositor window");
+  if (xcb_generic_error_t* error;
+      (error =
+         xcb_request_check(mEwmh.connection,
+                           xcb_create_window_checked(
+                             mEwmh.connection,
+                             XCB_COPY_FROM_PARENT,
+                             mCompositorWindow,
+                             mScreen->root,
+                             0,
+                             0,
+                             mScreen->width_in_pixels,
+                             mScreen->height_in_pixels,
+                             0,
+                             XCB_WINDOW_CLASS_INPUT_OUTPUT,
+                             mVisualId,
+                             XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT |
+                               XCB_CW_EVENT_MASK | XCB_CW_COLORMAP,
+                             (uint32_t[]){ 0,
+                                           1,
+                                           (XCB_EVENT_MASK_EXPOSURE |
+                                            XCB_EVENT_MASK_STRUCTURE_NOTIFY),
+                                           colormap })))) {
+    std::println(
+      std::cerr,
+      "could not create compositor window: Bad{}",
+      xcb_errors_get_name_for_error(mErrorContext, error->error_code, nullptr));
     return;
   }
 
@@ -255,15 +264,19 @@ WindowManager::Run()
   mFlags.set(Flag_Running);
 
   while (IsRunning()) {
-    xcb_generic_event_t* event = xcb_wait_for_event(mEwmh.connection);
+    xcb_generic_event_t* event = xcb_poll_for_event(mEwmh.connection);
+#if 0
     if (!event) {
       std::println(std::cerr, "lost connection to X server");
       mFlags.reset(Flag_Running);
       break;
     }
+#endif
 
-    HandleEvent(event);
-    free(event);
+    if (event) {
+      HandleEvent(event);
+      free(event);
+    }
 
     // TODO:
     glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
@@ -272,13 +285,13 @@ WindowManager::Run()
     // clang-format off
     float vertices[] = {
         // positions          // colors           // texture coords
-         0.5f,  0.5f, 0.0f,   1.0f, 0.0f, 0.0f,   1.0f, 1.0f,   // top right
-         0.5f, -0.5f, 0.0f,   0.0f, 1.0f, 0.0f,   1.0f, 0.0f,   // bottom right
-        -0.5f, -0.5f, 0.0f,   0.0f, 0.0f, 1.0f,   0.0f, 0.0f,   // bottom left
+        -0.5f,  0.5f, 0.0f,   1.0f, 1.0f, 1.0f,   0.0f, 1.0f,   // top left 
+         0.5f,  0.5f, 0.0f,   1.0f, 1.0f, 1.0f,   1.0f, 1.0f,   // top right
+        -0.5f, -0.5f, 0.0f,   1.0f, 1.0f, 1.0f,   0.0f, 0.0f,   // bottom left
                                                                 
-        -0.5f,  0.5f, 0.0f,   1.0f, 1.0f, 0.0f,   0.0f, 1.0f,   // top left 
-         0.5f,  0.5f, 0.0f,   1.0f, 0.0f, 0.0f,   1.0f, 1.0f,   // top right
-        -0.5f, -0.5f, 0.0f,   0.0f, 0.0f, 1.0f,   0.0f, 0.0f,   // bottom left
+         0.5f,  0.5f, 0.0f,   1.0f, 1.0f, 1.0f,   1.0f, 1.0f,   // top right
+         0.5f, -0.5f, 0.0f,   1.0f, 1.0f, 1.0f,   1.0f, 0.0f,   // bottom right
+        -0.5f, -0.5f, 0.0f,   1.0f, 1.0f, 1.0f,   0.0f, 0.0f,   // bottom left
     };
     // clang-format on
 
@@ -363,23 +376,40 @@ WindowManager::Run()
 
     GLuint texture = 0;
     if (mGlxPixmap) {
-      glGenTextures(1, &texture);
-      glBindTexture(GL_TEXTURE_2D, texture);
+      for (auto& [window, client] : mClients) {
+        // clang-format off
+        static const int kPixmapAttribs[] = {
+            GLX_TEXTURE_TARGET_EXT, GLX_TEXTURE_2D_EXT,
+            GLX_TEXTURE_FORMAT_EXT, GLX_TEXTURE_FORMAT_RGB_EXT,
+            /*GLX_MIPMAP_TEXTURE_EXT, True,*/
+            None
+        };
+        // clang-format on
 
-      glXBindTexImageEXT(mDisplay, mGlxPixmap, GLX_FRONT_EXT, nullptr);
+        mGlxPixmap =
+          glXCreatePixmap(mDisplay, mFbConfig, client.mPixmap, kPixmapAttribs);
 
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+
+        glXBindTexImageEXT(mDisplay, mGlxPixmap, GLX_FRONT_EXT, nullptr);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+        if (texture) {
+          glUseProgram(shaderProgram);
+          glDrawArrays(GL_TRIANGLES, 0, sizeof(vertices));
+        }
+
+        glXSwapBuffers(mDisplay, mGlxWindow);
+
+        using namespace std::chrono_literals;
+        std::this_thread::sleep_for(30ms);
+      }
     }
-
-    if (texture) {
-      glUseProgram(shaderProgram);
-      glDrawArrays(GL_TRIANGLES, 0, sizeof(vertices));
-    }
-
-    glXSwapBuffers(mDisplay, mGlxWindow);
   }
 }
 
