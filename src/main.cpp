@@ -7,8 +7,11 @@
 #include <xcb/xproto.h>
 
 #include "handlers.cpp"
-#include "window_manager.cpp"
 #include "shader_sources.cpp"
+#include "window_manager.cpp"
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 
 inline constexpr const char* const term_command[] = { "ghostty", nullptr };
 

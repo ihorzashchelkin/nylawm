@@ -22,6 +22,8 @@
 #include "internal.hpp"
 #include "shader_sources.hpp"
 
+#include "stb_image.h"
+
 namespace cirnowm {
 
 void GLAPIENTRY
@@ -185,7 +187,6 @@ WindowManager::WindowManager(std::span<const Keybind> aKeybinds)
 
   if (!glXMakeContextCurrent(mDisplay, mGlxWindow, mGlxWindow, mGlxContext)) {
     std::println(std::cerr, "glXMakeContextCurrent failed");
-    return;
   }
 
   glEnable(GL_DEBUG_OUTPUT);
@@ -257,10 +258,15 @@ WindowManager::Run()
     glClear(GL_COLOR_BUFFER_BIT);
 
     // clang-format off
-    static float vertices[] = {
-      -0.5, -0.5, 0.0,
-       0.5, -0.5, 0.0,
-       0.0,  0.5, 0.0,
+    float vertices[] = {
+        // positions          // colors           // texture coords
+         0.5f,  0.5f, 0.0f,   1.0f, 0.0f, 0.0f,   1.0f, 1.0f,   // top right
+         0.5f, -0.5f, 0.0f,   0.0f, 1.0f, 0.0f,   1.0f, 0.0f,   // bottom right
+        -0.5f, -0.5f, 0.0f,   0.0f, 0.0f, 1.0f,   0.0f, 0.0f,   // bottom left
+                                                                
+        -0.5f,  0.5f, 0.0f,   1.0f, 1.0f, 0.0f,   0.0f, 1.0f,   // top left 
+         0.5f,  0.5f, 0.0f,   1.0f, 0.0f, 0.0f,   1.0f, 1.0f,   // top right
+        -0.5f, -0.5f, 0.0f,   0.0f, 0.0f, 1.0f,   0.0f, 0.0f,   // bottom left
     };
     // clang-format on
 
@@ -332,11 +338,55 @@ WindowManager::Run()
       }
     }
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), nullptr);
     glEnableVertexAttribArray(0);
 
+    glVertexAttribPointer(
+      1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    glVertexAttribPointer(
+      2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+
     glUseProgram(shaderProgram);
-    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glDrawArrays(GL_TRIANGLES, 0, sizeof(vertices));
+
+    static int width, height, nrChannels;
+    static unsigned char* data;
+
+    if (!data) {
+      data =
+        stbi_load("data/textures/wall.jpg", &width, &height, &nrChannels, 0);
+      if (!data) {
+        std::println(std::cerr, "could not laod texture");
+      }
+    }
+
+    static GLuint texture = 0;
+    if (!texture) {
+      glGenTextures(1, &texture);
+      glBindTexture(GL_TEXTURE_2D, texture);
+
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+      glTexParameteri(
+        GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+      glTexImage2D(GL_TEXTURE_2D,
+                   0,
+                   GL_RGB,
+                   width,
+                   height,
+                   0,
+                   GL_RGB,
+                   GL_UNSIGNED_BYTE,
+                   data);
+      glGenerateMipmap(GL_TEXTURE_2D);
+
+      stbi_image_free(data);
+    }
 
     glXSwapBuffers(mDisplay, mGlxWindow);
   }

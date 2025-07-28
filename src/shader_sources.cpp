@@ -3,24 +3,33 @@
 const char* gVertexShaderSrc = "#version 330 core \n\
 \n\
 layout (location = 0) in vec3 aPos;\n\
+layout (location = 1) in vec3 aColor;\n\
+layout (location = 2) in vec2 aTexCoord;\n\
+\n\
+out vec3 ourColor;\n\
+out vec2 TexCoord;\n\
 \n\
 void\n\
 main()\n\
 {\n\
     gl_Position = vec4(aPos, 1.0);\n\
+    ourColor = aColor;\n\
+    TexCoord = aTexCoord;\n\
 }\n\
 \n\
 ";
 
-const char* gFragmentShaderSrc = "#version 330 core \n\
+const char* gFragmentShaderSrc = "#version 330 core\n\
+out vec4 FragColor;\n\
+  \n\
+in vec3 ourColor;\n\
+in vec2 TexCoord;\n\
 \n\
-out vec4 fragColor;\n\
+uniform sampler2D ourTexture;\n\
 \n\
-void\n\
-main()\n\
+void main()\n\
 {\n\
-    fragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f);\n\
+    FragColor = texture(ourTexture, TexCoord) * vec4(ourColor, 1.0);\n\
 }\n\
-\n\
 ";
 
