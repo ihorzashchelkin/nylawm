@@ -108,7 +108,9 @@ WindowManager::HandleUnmapNotify(const xcb_unmap_notify_event_t* Event)
 
 void
 WindowManager::HandleClientMessage(const xcb_client_message_event_t* aEvent)
-{
+{ // TODO: have to unredirect full screen clients and redirect back when
+  // not fullscreen
+  // TODO: have to think about how apps do borderless fullscreen
   if (IsDebug())
     std::println(std::clog, "ClientMessage from {}", aEvent->window);
 

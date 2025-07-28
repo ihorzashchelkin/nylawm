@@ -278,7 +278,9 @@ WindowManager::Run()
       free(event);
     }
 
-    // TODO:
+    // TODO: Read about xpresent extension
+    // TODO: organize the event loop
+    //
     glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
