@@ -1,3 +1,5 @@
+#include <cstdint>
+#include <epoxy/glx_generated.h>
 #include <iostream>
 #include <print>
 #include <xcb/composite.h>
@@ -159,6 +161,17 @@ WindowManager::HandleMapNotify(const xcb_map_notify_event_t* aEvent)
 
     xcb_pixmap_t pixmap = xcb_generate_id(mEwmh.connection);
     xcb_composite_name_window_pixmap(mEwmh.connection, aEvent->window, pixmap);
+
+    // clang-format off
+    static const int kPixmapAttribs[] = {
+        GLX_TEXTURE_TARGET_EXT, GLX_TEXTURE_2D_EXT,
+        GLX_TEXTURE_FORMAT_EXT, GLX_TEXTURE_FORMAT_RGB_EXT,
+        /*GLX_MIPMAP_TEXTURE_EXT, True,*/
+        None
+    };
+    // clang-format on
+
+    mGlxPixmap = glXCreatePixmap(mDisplay, mFbConfig, pixmap, kPixmapAttribs);
   }
 }
 

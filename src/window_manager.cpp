@@ -47,7 +47,18 @@ WindowManager::WindowManager(std::span<const Keybind> aKeybinds)
   : mFlags{}
   , mDisplay{}
   , mEwmh{}
+  , mScreenNumber{}
+  , mScreen{}
   , mCompositorWindow{}
+  , mKeybinds{}
+  , mGlxContext{}
+  , mGlxWindow{}
+  , mFbConfig{}
+  , mVisualId{}
+  , mClients{}
+
+  // for testing
+  , mGlxPixmap{}
 {
   mDisplay = XOpenDisplay(nullptr);
   if (!mDisplay) {
@@ -124,7 +135,7 @@ WindowManager::WindowManager(std::span<const Keybind> aKeybinds)
     return;
   }
 
-  GLXFBConfig fbConfig =
+  mFbConfig = // TODO: fix this!!
     *std::max_element(fbConfigs, fbConfigs + numFbConfigs, [&](auto a, auto b) {
       int sa, sb;
       glXGetFBConfigAttrib(mDisplay, a, GLX_SAMPLES, &sa);
@@ -133,9 +144,10 @@ WindowManager::WindowManager(std::span<const Keybind> aKeybinds)
     });
   XFree(fbConfigs);
 
-  glXGetFBConfigAttrib(mDisplay, fbConfig, GLX_VISUAL_ID, &mVisualId);
+  glXGetFBConfigAttrib(mDisplay, mFbConfig, GLX_VISUAL_ID, &mVisualId);
 
-  mGlxContext = glXCreateNewContext(mDisplay, fbConfig, GLX_RGBA_TYPE, 0, True);
+  mGlxContext =
+    glXCreateNewContext(mDisplay, mFbConfig, GLX_RGBA_TYPE, 0, True);
   if (!mGlxContext) {
     std::println("glXCreateNewContext failed");
     return;
@@ -179,7 +191,7 @@ WindowManager::WindowManager(std::span<const Keybind> aKeybinds)
     return;
   }
 
-  mGlxWindow = glXCreateWindow(mDisplay, fbConfig, mCompositorWindow, 0);
+  mGlxWindow = glXCreateWindow(mDisplay, mFbConfig, mCompositorWindow, 0);
   if (!mGlxWindow) {
     std::println(std::cerr, "glXCreateWindow failed");
     return;
@@ -349,43 +361,22 @@ WindowManager::Run()
       2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
     glEnableVertexAttribArray(2);
 
-    glUseProgram(shaderProgram);
-    glDrawArrays(GL_TRIANGLES, 0, sizeof(vertices));
-
-    static int width, height, nrChannels;
-    static unsigned char* data;
-
-    if (!data) {
-      data =
-        stbi_load("data/textures/wall.jpg", &width, &height, &nrChannels, 0);
-      if (!data) {
-        std::println(std::cerr, "could not laod texture");
-      }
-    }
-
-    static GLuint texture = 0;
-    if (!texture) {
+    GLuint texture = 0;
+    if (mGlxPixmap) {
       glGenTextures(1, &texture);
       glBindTexture(GL_TEXTURE_2D, texture);
 
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-      glTexParameteri(
-        GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+      glXBindTexImageEXT(mDisplay, mGlxPixmap, GLX_FRONT_EXT, nullptr);
+
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    }
 
-      glTexImage2D(GL_TEXTURE_2D,
-                   0,
-                   GL_RGB,
-                   width,
-                   height,
-                   0,
-                   GL_RGB,
-                   GL_UNSIGNED_BYTE,
-                   data);
-      glGenerateMipmap(GL_TEXTURE_2D);
-
-      stbi_image_free(data);
+    if (texture) {
+      glUseProgram(shaderProgram);
+      glDrawArrays(GL_TRIANGLES, 0, sizeof(vertices));
     }
 
     glXSwapBuffers(mDisplay, mGlxWindow);

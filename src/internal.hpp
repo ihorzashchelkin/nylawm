@@ -2,6 +2,7 @@
 
 #include <bitset>
 #include <cstdint>
+#include <epoxy/glx_generated.h>
 #include <span>
 #include <unordered_map>
 #include <vector>
@@ -42,6 +43,7 @@ struct Client
   std::bitset<Flag_Count> mFlags;
 
   uint32_t mPixmap;
+  uint32_t mGlxPixmap;
   uint16_t mX, mY;
   uint16_t mWidth, mHeight;
 };
@@ -65,8 +67,12 @@ class WindowManager
   std::vector<Keybind::Resolved> mKeybinds;
   GLXContext mGlxContext;
   uint64_t mGlxWindow;
+  GLXFBConfig mFbConfig;
   int mVisualId;
   std::unordered_map<xcb_window_t, Client> mClients;
+
+  // for testing:
+  uint32_t mGlxPixmap;
 
 public:
   WindowManager(std::span<const Keybind> aKeyBinds);
