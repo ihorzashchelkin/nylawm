@@ -1,15 +1,11 @@
-.PHONY: build configure clean run xev xephyr shaders
-
 build: configure shaders
-	cmake --build build
+	ninja -C build
 
 shaders:
 	python3 shaders_postprocess.py
 
 configure:
-	#cmake -B build .
-	cmake -DCMAKE_BUILD_TYPE=Debug -B build .
-	mv build/compile_commands.json .
+	meson setup build --reconfigure
 
 clean:
 	rm -rf build
