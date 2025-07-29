@@ -12,6 +12,8 @@
 #include <xcb/xcb_ewmh.h>
 #include <xcb/xproto.h>
 
+#include <boost/circular_buffer.hpp>
+
 typedef struct _XDisplay Display;
 typedef struct __GLXcontextRec* GLXContext;
 
@@ -36,16 +38,21 @@ struct Keybind
 
 struct Client
 {
-  enum
-  {
-    Flag_Count
-  };
-  std::bitset<Flag_Count> mFlags;
+  uint32_t mXPixmap;
+  uint32_t mGLXPixmap;
+  uint32_t mGLVertexBuffer;
+  uint32_t mGLVertexArray;
+  int16_t mPosX;
+  int16_t mPosY;
+  uint16_t mWidth;
+  uint16_t mHeight;
+  uint16_t mBorderWidth;
+};
 
-  uint32_t mPixmap;
-  uint32_t mGlxPixmap;
-  uint16_t mX, mY;
-  uint16_t mWidth, mHeight;
+struct IgnoredEvent
+{
+  uint16_t mSequence;
+  uint8_t mType;
 };
 
 class WindowManager
@@ -57,22 +64,21 @@ class WindowManager
     Flag_Debug,
     Flag_Count
   };
-  std::bitset<Flag_Count> mFlags;
-  Display* mDisplay;
-  xcb_ewmh_connection_t mEwmh;
-  int mScreenNumber;
-  xcb_screen_t* mScreen;
-  xcb_errors_context_t* mErrorContext;
-  xcb_window_t mCompositorWindow;
-  std::vector<Keybind::Resolved> mKeybinds;
-  GLXContext mGlxContext;
-  uint64_t mGlxWindow;
-  GLXFBConfig mFbConfig;
-  int mVisualId;
-  std::unordered_map<xcb_window_t, Client> mClients;
-
-  // for testing:
-  uint32_t mGlxPixmap;
+  std::bitset<Flag_Count> mFlags{};
+  Display* mDisplay{};
+  xcb_ewmh_connection_t mEwmh{};
+  int mScreenNumber{};
+  xcb_screen_t* mScreen{};
+  xcb_errors_context_t* mErrorContext{};
+  xcb_window_t mCompositorWindow{};
+  std::vector<Keybind::Resolved> mKeybinds{};
+  GLXContext mGlxContext{};
+  uint64_t mGlxWindow{};
+  GLXFBConfig mFbConfig{};
+  int mVisualId{};
+  std::unordered_map<xcb_window_t, Client> mClients{};
+  boost::circular_buffer<IgnoredEvent> mIgnoredEvents{ 4 };
+  uint8_t mPendingXRequests{};
 
 public:
   WindowManager(std::span<const Keybind> aKeyBinds);
@@ -91,6 +97,8 @@ public:
 
 private:
   void GrabKeys();
+
+  void RenderAll();
 
   void HandleError(const xcb_generic_error_t* aError);
   void HandleEvent(const xcb_generic_event_t* aEvent);

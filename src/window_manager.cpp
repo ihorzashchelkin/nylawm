@@ -48,21 +48,6 @@ GLDebugMessageCallback(GLenum aSource,
 }
 
 WindowManager::WindowManager(std::span<const Keybind> aKeybinds)
-  : mFlags{}
-  , mDisplay{}
-  , mEwmh{}
-  , mScreenNumber{}
-  , mScreen{}
-  , mCompositorWindow{}
-  , mKeybinds{}
-  , mGlxContext{}
-  , mGlxWindow{}
-  , mFbConfig{}
-  , mVisualId{}
-  , mClients{}
-
-  // for testing
-  , mGlxPixmap{}
 {
   mDisplay = XOpenDisplay(nullptr);
   if (!mDisplay) {
@@ -259,159 +244,186 @@ WindowManager::GrabKeys()
 }
 
 void
+WindowManager::RenderAll()
+{
+  // clang-format off
+  float vertices[] = {
+      // positions          // texture coords
+      -0.5f,  0.5f, 0.0f,   0.0f, 1.0f,   // top left 
+       0.5f,  0.5f, 0.0f,   1.0f, 1.0f,   // top right
+      -0.5f, -0.5f, 0.0f,   0.0f, 0.0f,   // bottom left
+                                                              
+       0.5f,  0.5f, 0.0f,   1.0f, 1.0f,   // top right
+       0.5f, -0.5f, 0.0f,   1.0f, 0.0f,   // bottom right
+      -0.5f, -0.5f, 0.0f,   0.0f, 0.0f,   // bottom left
+  };
+  // clang-format on
+
+  static GLuint vao = 0;
+  if (!vao) {
+    glGenVertexArrays(1, &vao);
+  }
+
+  glBindVertexArray(vao);
+
+  static GLuint vbo = 0;
+  if (!vbo) {
+    glGenBuffers(1, &vbo);
+  }
+
+  glBindBuffer(GL_ARRAY_BUFFER, vbo);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+  static GLuint vertexShader = 0;
+  if (!vertexShader) {
+    vertexShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertexShader, 1, &gVertexShaderSrc, nullptr);
+    glCompileShader(vertexShader);
+
+    int success;
+    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
+    if (success) {
+      std::println(std::clog, "vertex shader successfully compiled");
+    } else {
+      std::println(std::cerr, "vertex shader compilation failed");
+
+      char infoLog[512];
+      memset(infoLog, 0, sizeof(infoLog));
+      glGetShaderInfoLog(vertexShader, sizeof(infoLog) - 1, nullptr, infoLog);
+      std::println("{}\n\n{}", gVertexShaderSrc, infoLog);
+    }
+  }
+
+  static GLuint fragmentShader = 0;
+  if (!fragmentShader) {
+    fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragmentShader, 1, &gFragmentShaderSrc, nullptr);
+    glCompileShader(fragmentShader);
+
+    int success;
+    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
+    if (success) {
+      std::println(std::clog, "fragment shader successfully compiled");
+    } else {
+      std::println(std::cerr, "fragment shader compilation failed");
+    }
+  }
+
+  static GLuint shaderProgram = 0;
+  if (!shaderProgram) {
+    shaderProgram = glCreateProgram();
+    glAttachShader(shaderProgram, vertexShader);
+    glAttachShader(shaderProgram, fragmentShader);
+    glLinkProgram(shaderProgram);
+
+    int success;
+    glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
+    if (success) {
+      std::println(std::clog, "shader program successfully linked");
+      glDeleteShader(vertexShader);
+      glDeleteShader(fragmentShader);
+    } else {
+      std::println(std::cerr, "shader program link failed");
+    }
+  }
+
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), nullptr);
+  glEnableVertexAttribArray(0);
+
+  glVertexAttribPointer(
+    1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+  glEnableVertexAttribArray(1);
+
+  // clang-format off
+  static const int kPixmapAttribs[] = {
+      GLX_TEXTURE_TARGET_EXT, GLX_TEXTURE_2D_EXT,
+      GLX_TEXTURE_FORMAT_EXT, GLX_TEXTURE_FORMAT_RGB_EXT,
+      /*GLX_MIPMAP_TEXTURE_EXT, True,*/
+      None
+  };
+  // clang-format on
+
+  for (auto& [window, client] : mClients) {
+    if (!client.mGLXPixmap)
+      continue;
+
+    GLuint texture = 0;
+    glGenTextures(1, &texture);
+
+    glBindTexture(GL_TEXTURE_2D, texture);
+
+    client.mGLXPixmap =
+      glXCreatePixmap(mDisplay, mFbConfig, client.mXPixmap, kPixmapAttribs);
+
+    glXBindTexImageEXT(mDisplay, client.mGLXPixmap, GLX_FRONT_EXT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+    using namespace std::chrono_literals;
+    std::this_thread::sleep_for(30ms);
+  }
+
+  glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+  glClear(GL_COLOR_BUFFER_BIT);
+
+  glUseProgram(shaderProgram);
+  glDrawArrays(GL_TRIANGLES, 0, sizeof(vertices));
+
+  glXSwapBuffers(mDisplay, mGlxWindow);
+
+  using namespace std::chrono_literals;
+  std::this_thread::sleep_for(25ms);
+}
+
+void
 WindowManager::Run()
 {
   mFlags.set(Flag_Running);
 
+outerLoop:
   while (IsRunning()) {
-    xcb_generic_event_t* event = xcb_poll_for_event(mEwmh.connection);
-#if 0
-    if (!event) {
-      std::println(std::cerr, "lost connection to X server");
-      mFlags.reset(Flag_Running);
-      break;
-    }
-#endif
 
-    if (event) {
+  eventLoop:
+    for (xcb_generic_event_t* event = xcb_poll_for_event(mEwmh.connection);
+         event;
+         event = xcb_poll_for_event(mEwmh.connection)) {
+
+      for (auto& ignoredEvent : mIgnoredEvents) {
+        if (ignoredEvent.mSequence != event->sequence)
+          continue;
+        if (ignoredEvent.mType &&
+            ignoredEvent.mType != (event->response_type & ~0x80))
+          continue;
+
+        goto eventLoop;
+      }
+
       HandleEvent(event);
+
+      if (mPendingXRequests >= 32) {
+        xcb_flush(mEwmh.connection);
+        mPendingXRequests = 0;
+      }
+
       free(event);
+    }
+
+    if (xcb_connection_has_error(mEwmh.connection)) {
+      mFlags.reset(Flag_Running);
+      goto outerLoop;
+    }
+
+    if (mPendingXRequests > 0) {
+      xcb_flush(mEwmh.connection);
+      mPendingXRequests = 0;
     }
 
     // TODO: Read about xpresent extension
     // TODO: organize the event loop
-    //
-    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
 
-    // clang-format off
-    float vertices[] = {
-        // positions          // colors           // texture coords
-        -0.5f,  0.5f, 0.0f,   1.0f, 1.0f, 1.0f,   0.0f, 1.0f,   // top left 
-         0.5f,  0.5f, 0.0f,   1.0f, 1.0f, 1.0f,   1.0f, 1.0f,   // top right
-        -0.5f, -0.5f, 0.0f,   1.0f, 1.0f, 1.0f,   0.0f, 0.0f,   // bottom left
-                                                                
-         0.5f,  0.5f, 0.0f,   1.0f, 1.0f, 1.0f,   1.0f, 1.0f,   // top right
-         0.5f, -0.5f, 0.0f,   1.0f, 1.0f, 1.0f,   1.0f, 0.0f,   // bottom right
-        -0.5f, -0.5f, 0.0f,   1.0f, 1.0f, 1.0f,   0.0f, 0.0f,   // bottom left
-    };
-    // clang-format on
-
-    static GLuint vao = 0;
-    if (!vao) {
-      glGenVertexArrays(1, &vao);
-    }
-
-    glBindVertexArray(vao);
-
-    static GLuint vbo = 0;
-    if (!vbo) {
-      glGenBuffers(1, &vbo);
-    }
-
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-    static GLuint vertexShader = 0;
-    if (!vertexShader) {
-      vertexShader = glCreateShader(GL_VERTEX_SHADER);
-      glShaderSource(vertexShader, 1, &gVertexShaderSrc, nullptr);
-      glCompileShader(vertexShader);
-
-      int success;
-      glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
-      if (success) {
-        std::println(std::clog, "vertex shader successfully compiled");
-      } else {
-        std::println(std::cerr, "vertex shader compilation failed");
-
-        char infoLog[512];
-        memset(infoLog, 0, sizeof(infoLog));
-        glGetShaderInfoLog(vertexShader, sizeof(infoLog) - 1, nullptr, infoLog);
-        std::println("{}\n\n{}", gVertexShaderSrc, infoLog);
-      }
-    }
-
-    static GLuint fragmentShader = 0;
-    if (!fragmentShader) {
-      fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-      glShaderSource(fragmentShader, 1, &gFragmentShaderSrc, nullptr);
-      glCompileShader(fragmentShader);
-
-      int success;
-      glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
-      if (success) {
-        std::println(std::clog, "fragment shader successfully compiled");
-      } else {
-        std::println(std::cerr, "fragment shader compilation failed");
-      }
-    }
-
-    static GLuint shaderProgram = 0;
-    if (!shaderProgram) {
-      shaderProgram = glCreateProgram();
-      glAttachShader(shaderProgram, vertexShader);
-      glAttachShader(shaderProgram, fragmentShader);
-      glLinkProgram(shaderProgram);
-
-      int success;
-      glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
-      if (success) {
-        std::println(std::clog, "shader program successfully linked");
-        glDeleteShader(vertexShader);
-        glDeleteShader(fragmentShader);
-      } else {
-        std::println(std::cerr, "shader program link failed");
-      }
-    }
-
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), nullptr);
-    glEnableVertexAttribArray(0);
-
-    glVertexAttribPointer(
-      1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    glVertexAttribPointer(
-      2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
-    glEnableVertexAttribArray(2);
-
-    GLuint texture = 0;
-    if (mGlxPixmap) {
-      for (auto& [window, client] : mClients) {
-        // clang-format off
-        static const int kPixmapAttribs[] = {
-            GLX_TEXTURE_TARGET_EXT, GLX_TEXTURE_2D_EXT,
-            GLX_TEXTURE_FORMAT_EXT, GLX_TEXTURE_FORMAT_RGB_EXT,
-            /*GLX_MIPMAP_TEXTURE_EXT, True,*/
-            None
-        };
-        // clang-format on
-
-        mGlxPixmap =
-          glXCreatePixmap(mDisplay, mFbConfig, client.mPixmap, kPixmapAttribs);
-
-        glGenTextures(1, &texture);
-        glBindTexture(GL_TEXTURE_2D, texture);
-
-        glXBindTexImageEXT(mDisplay, mGlxPixmap, GLX_FRONT_EXT, nullptr);
-
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-
-        if (texture) {
-          glUseProgram(shaderProgram);
-          glDrawArrays(GL_TRIANGLES, 0, sizeof(vertices));
-        }
-
-        glXSwapBuffers(mDisplay, mGlxWindow);
-
-        using namespace std::chrono_literals;
-        std::this_thread::sleep_for(30ms);
-      }
-    }
+    RenderAll();
   }
 }
 

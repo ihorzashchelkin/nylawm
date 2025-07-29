@@ -1,3 +1,4 @@
+#include <X11/Xlib.h>
 #include <cstdint>
 #include <epoxy/glx_generated.h>
 #include <iostream>
@@ -37,22 +38,61 @@ WindowManager::HandleConfigureRequest(
   appendIf(XCB_CONFIG_WINDOW_STACK_MODE, aEvent->stack_mode);
 
   xcb_configure_window(mEwmh.connection, aEvent->window, mask, values.data());
-  xcb_flush(mEwmh.connection);
+  mPendingXRequests++;
 }
 
 void
 WindowManager::HandleConfigureNotify(const xcb_configure_notify_event_t* aEvent)
 {
+  if (aEvent->override_redirect || !mClients.contains(aEvent->window))
+    return;
+
+  auto& client = mClients[aEvent->window];
+  client.mPosX = aEvent->x;
+  client.mPosY = aEvent->y;
+  client.mWidth = aEvent->width;
+  client.mHeight = aEvent->height;
+  client.mBorderWidth = aEvent->border_width;
 }
 
 void
 WindowManager::HandleCreateNotify(const xcb_create_notify_event_t* aEvent)
 {
+  if (aEvent->override_redirect)
+    return;
+
+  if (IsDebug()) {
+    std::println(std::clog, "CreateNotify from {}", aEvent->window);
+
+    if (mClients.contains(aEvent->window)) {
+      std::println("InvalidState {}:{}   {}",
+                   __FILE_NAME__,
+                   __LINE__,
+                   "CreateNotify for existing client");
+      std::exit(1);
+    }
+  }
+
+  if (xcb_request_check(
+        mEwmh.connection,
+        xcb_composite_redirect_window_checked(
+          mEwmh.connection, aEvent->window, XCB_COMPOSITE_REDIRECT_MANUAL)))
+    return;
+
+  mClients.emplace(aEvent->window,
+                   Client{
+                     .mPosX = aEvent->x,
+                     .mPosY = aEvent->y,
+                     .mWidth = aEvent->width,
+                     .mHeight = aEvent->height,
+                     .mBorderWidth = aEvent->border_width,
+                   });
 }
 
 void
 WindowManager::HandleDestroyNotify(const xcb_destroy_notify_event_t* aEvent)
 {
+  mClients.erase(aEvent->window);
 }
 
 void
@@ -134,47 +174,31 @@ WindowManager::HandleMotionNotify(const xcb_motion_notify_event_t* aEvent)
 void
 WindowManager::HandleMapRequest(const xcb_map_request_event_t* aEvent)
 {
+  if (!mClients.contains(aEvent->window))
+    return;
+
+  if (IsDebug())
+    std::println("MapRequest from {}", aEvent->window);
+
   xcb_map_window(mEwmh.connection, aEvent->window);
-  xcb_flush(mEwmh.connection);
+  mPendingXRequests++;
 }
 
 void
 WindowManager::HandleMapNotify(const xcb_map_notify_event_t* aEvent)
 {
+  if (aEvent->override_redirect || !mClients.contains(aEvent->window))
+    return;
+
   if (IsDebug())
     std::println(std::clog, "MapNotify from {}", aEvent->window);
 
-  if (!mClients.contains(aEvent->window)) {
-    xcb_get_window_attributes_reply_t* reply = xcb_get_window_attributes_reply(
-      mEwmh.connection,
-      xcb_get_window_attributes(mEwmh.connection, aEvent->window),
-      nullptr);
+  auto& client = mClients.at(aEvent->window);
+  client.mXPixmap = xcb_generate_id(mEwmh.connection);
 
-    if (!reply || reply->override_redirect)
-      return;
-
-    if (xcb_request_check(
-          mEwmh.connection,
-          xcb_composite_redirect_window_checked(
-            mEwmh.connection, aEvent->window, XCB_COMPOSITE_REDIRECT_MANUAL)))
-      return;
-
-    xcb_pixmap_t pixmap = xcb_generate_id(mEwmh.connection);
-    xcb_composite_name_window_pixmap(mEwmh.connection, aEvent->window, pixmap);
-
-    mClients.emplace(aEvent->window, Client{ .mPixmap = pixmap });
-
-    // clang-format off
-    static const int kPixmapAttribs[] = {
-        GLX_TEXTURE_TARGET_EXT, GLX_TEXTURE_2D_EXT,
-        GLX_TEXTURE_FORMAT_EXT, GLX_TEXTURE_FORMAT_RGB_EXT,
-        /*GLX_MIPMAP_TEXTURE_EXT, True,*/
-        None
-    };
-    // clang-format on
-
-    mGlxPixmap = glXCreatePixmap(mDisplay, mFbConfig, pixmap, kPixmapAttribs);
-  }
+  xcb_composite_name_window_pixmap(
+    mEwmh.connection, aEvent->window, client.mXPixmap);
+  mPendingXRequests++;
 }
 
 void
