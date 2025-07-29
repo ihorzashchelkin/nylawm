@@ -5,7 +5,7 @@
 
 #include <cstdint>
 
-namespace cirnowm {
+namespace nyla {
 
 class glx_window_manager
 {
@@ -109,7 +109,6 @@ private:
   void PrepareSpawn();
   void TryResolveKeyBinds();
   void GrabKeys();
-
 };
 
-} // namespace cirnowm
+}

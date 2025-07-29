@@ -17,7 +17,7 @@
 typedef struct _XDisplay Display;
 typedef struct __GLXcontextRec* GLXContext;
 
-namespace cirnowm {
+namespace nyla {
 
 class WindowManager;
 using Action = void (*)(WindowManager*);

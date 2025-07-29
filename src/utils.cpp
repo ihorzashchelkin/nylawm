@@ -7,7 +7,7 @@
 #include <xcb/xcb_errors.h>
 #include <xcb/xproto.h>
 
-namespace cirnowm {
+namespace nyla {
 
 void
 PrintAtomName(std::ostream& out,

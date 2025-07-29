@@ -9,7 +9,7 @@
 
 #include "internal.hpp"
 
-namespace cirnowm {
+namespace nyla {
 
 void
 WindowManager::HandleConfigureRequest(

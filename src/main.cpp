@@ -17,7 +17,7 @@ inline constexpr const char* const term_command[] = { "ghostty", nullptr };
 
 inline constexpr xcb_mod_mask_t kMod = XCB_MOD_MASK_4;
 inline constexpr xcb_mod_mask_t kShift = XCB_MOD_MASK_SHIFT;
-inline constexpr auto bindings = std::to_array<const cirnowm::Keybind>({
+inline constexpr auto bindings = std::to_array<const nyla::Keybind>({
   // clang-format off
   { kMod,          XK_Return, [](auto x) { x->Spawn(term_command); } },
   { kMod | kShift, XK_Q,      [](auto x) { x->Quit(); } },
@@ -32,7 +32,7 @@ main(int argc, char* argv[])
 {
   putenv(const_cast<char*>("DISPLAY=:1"));
 
-  cirnowm::WindowManager wm{ bindings };
+  nyla::WindowManager wm{ bindings };
   if (!wm)
     return EXIT_FAILURE;
 

@@ -28,7 +28,7 @@
 
 #include "stb_image.h"
 
-namespace cirnowm {
+namespace nyla {
 
 void GLAPIENTRY
 GLDebugMessageCallback(GLenum aSource,
