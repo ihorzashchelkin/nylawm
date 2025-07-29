@@ -4,12 +4,10 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <ctime>
 
-#include <X11/X.h>
-#include <X11/Xlib-xcb.h>
-#include <X11/Xlib.h>
 #include <xcb/xcb.h>
 
 #include <iostream>
@@ -17,6 +15,8 @@
 
 #include <cassert>
 #include <unistd.h>
+#include <xcb/xcb_aux.h>
+#include <xcb/xproto.h>
 
 #define Assert(x) assert(x)
 
@@ -77,15 +77,18 @@ GLDebugMessageCallback(GLenum aSource,
 int
 main()
 {
-  Display* dpy = XOpenDisplay(nullptr);
-  if (!dpy) {
+  int nScreen;
+  xcb_connection_t* connection = xcb_connect(nullptr, &nScreen);
+  if (xcb_connection_has_error(connection)) {
     std::println(std::cerr, "could not open display");
     return 1;
   }
 
+  xcb_screen_t* screen = xcb_aux_get_screen(connection, nScreen);
+
   EGLDisplay display;
   {
-    display = eglGetPlatformDisplay(EGL_PLATFORM_X11_KHR, dpy, nullptr);
+    display = eglGetPlatformDisplay(EGL_PLATFORM_XCB_EXT, connection, nullptr);
     if (display == EGL_NO_DISPLAY) {
       std::println(std::cerr, "could not create egl display");
       return 1;
@@ -142,31 +145,28 @@ main()
   glDebugMessageCallback(&GLDebugMessageCallback, nullptr);
   glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
 
-  XSetWindowAttributes attributes = {
-    .event_mask = StructureNotifyMask,
-  };
-
   int width = 1280;
   int height = 720;
-  Window window = XCreateWindow(dpy,
-                                DefaultRootWindow(dpy),
-                                0,
-                                0,
-                                width,
-                                height,
-                                0,
-                                CopyFromParent,
-                                InputOutput,
-                                CopyFromParent,
-                                CWEventMask,
-                                &attributes);
-  Assert(window && "Failed to create window");
 
-  XStoreName(dpy, window, "OepnGL Window");
+  xcb_window_t window = xcb_generate_id(connection);
 
-  Atom WM_PROTOCOLS = XInternAtom(dpy, "WM_PROTOCOLS", False);
-  Atom WM_DELETE_WINDOW = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
-  XSetWMProtocols(dpy, window, &WM_DELETE_WINDOW, 1);
+  if (xcb_request_check(connection,
+                        xcb_create_window_checked(
+                          connection,
+                          XCB_COPY_FROM_PARENT,
+                          window,
+                          screen->root,
+                          0,
+                          0,
+                          width,
+                          height,
+                          0,
+                          XCB_WINDOW_CLASS_INPUT_OUTPUT,
+                          XCB_COPY_FROM_PARENT,
+                          XCB_CW_EVENT_MASK,
+                          (uint32_t[]){ XCB_EVENT_MASK_STRUCTURE_NOTIFY }))) {
+    Assert(window && "Failed to create window");
+  }
 
   EGLConfig configs[64];
   EGLint config_count = sizeof(configs) / sizeof(configs[0]);
@@ -370,7 +370,8 @@ main()
     glDisable(GL_CULL_FACE);
   }
 
-  XMapWindow(dpy, window);
+  xcb_map_window(connection, window);
+  xcb_flush(connection);
 
   ok = eglMakeCurrent(display, surface, surface, context);
   Assert(ok && "Failed to make context current");
@@ -385,26 +386,13 @@ main()
   float angle = 0.0f;
 
   for (;;) {
-    if (XPending(dpy)) {
-      XEvent event;
-      XNextEvent(dpy, &event);
-      if (event.type == ClientMessage) {
-        if (event.xclient.message_type == WM_PROTOCOLS) {
-          Atom protocol = event.xclient.data.l[0];
-          if (protocol == WM_DELETE_WINDOW) {
-            break; // window closed
-          }
-        }
-      }
-      continue;
-    }
+    auto attr = xcb_get_geometry_reply(
+      connection, xcb_get_geometry(connection, window), nullptr);
 
-    XWindowAttributes attr;
-    Status status = XGetWindowAttributes(dpy, window, &attr);
-    Assert(status && "Failed to get window attributes");
+    Assert(attr && "Failed to get window attributes");
 
-    width = attr.width;
-    height = attr.height;
+    width = attr->width;
+    height = attr->height;
 
     timespec c2;
     clock_gettime(CLOCK_MONOTONIC, &c2);
