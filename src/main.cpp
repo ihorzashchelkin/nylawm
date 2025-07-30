@@ -1,30 +1,28 @@
 #include <array>
-#include <cstdlib>
-
-#include "internal.hpp"
 
 #include <X11/keysym.h>
 #include <xcb/xproto.h>
 
-#include "handlers.cpp"
-#include "shader_sources.cpp"
-#include "window_manager.cpp"
-
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
+#include "nyla.hpp"
 
 inline constexpr const char* const term_command[] = { "ghostty", nullptr };
 
 inline constexpr xcb_mod_mask_t kMod = XCB_MOD_MASK_4;
 inline constexpr xcb_mod_mask_t kShift = XCB_MOD_MASK_SHIFT;
 inline constexpr auto bindings = std::to_array<const nyla::Keybind>({
-  // clang-format off
-  { kMod,          XK_Return, [](auto x) { x->Spawn(term_command); } },
-  { kMod | kShift, XK_Q,      [](auto x) { x->Quit(); } },
+  {
+    kMod,
+    XK_Return,
+    [](auto state) { nyla::spawn(state, term_command); },
+  },
+  {
+    kMod | kShift,
+    XK_Q,
+    [](auto state) { nyla::quit(state); },
+  },
   // { kMod,          XK_C,      [](auto x) { x->Kill(); } },
   // { kMod,          XK_U,      [](auto x) { x->SwitchToPrevWorkspace(); } },
   // { kMod,          XK_I,      [](auto x) { x->SwitchToNextWorkspace(); } },
-  // clang-format on
 });
 
 int
@@ -32,11 +30,10 @@ main(int argc, char* argv[])
 {
   putenv(const_cast<char*>("DISPLAY=:1"));
 
-  nyla::WindowManager wm{ bindings };
-  if (!wm)
-    return EXIT_FAILURE;
+  nyla::State state{};
 
-  wm.SetDebug(true);
-
-  wm.Run();
+  nyla::initXcb(state, bindings);
+  nyla::initEgl(state);
+  nyla::preRun(state);
+  nyla::run(state);
 }

@@ -5,311 +5,285 @@
 #include <print>
 #include <xcb/composite.h>
 #include <xcb/xcb.h>
+#include <xcb/xcb_errors.h>
 #include <xcb/xproto.h>
 
-#include "internal.hpp"
+#include "src/nyla.hpp"
 
-namespace nyla {
+namespace nyla::handlers {
 
 void
-WindowManager::HandleConfigureRequest(
-  const xcb_configure_request_event_t* aEvent)
+configureRequest(State& state, xcb_configure_request_event_t& event)
 {
-  if (IsDebug())
-    std::println(std::clog, "ConfigureRequest from {}", aEvent->window);
+#ifndef NDEBUG
+  std::println(std::clog, "ConfigureRequest from {}", event.window);
+#endif
 
   uint32_t mask = 0;
-  std::vector<uint32_t> values;
-  values.reserve(7);
+  std::vector<uint32_t> values(7);
 
   auto appendIf = [&](uint32_t flag, uint32_t val) {
-    if (aEvent->value_mask & flag) {
+    if (event.value_mask & flag) {
       mask |= flag;
       values.push_back(val);
     }
   };
 
-  appendIf(XCB_CONFIG_WINDOW_X, aEvent->x);
-  appendIf(XCB_CONFIG_WINDOW_Y, aEvent->y);
-  appendIf(XCB_CONFIG_WINDOW_WIDTH, aEvent->width);
-  appendIf(XCB_CONFIG_WINDOW_HEIGHT, aEvent->height);
-  appendIf(XCB_CONFIG_WINDOW_BORDER_WIDTH, aEvent->border_width);
-  appendIf(XCB_CONFIG_WINDOW_SIBLING, aEvent->sibling);
-  appendIf(XCB_CONFIG_WINDOW_STACK_MODE, aEvent->stack_mode);
+  appendIf(XCB_CONFIG_WINDOW_X, event.x);
+  appendIf(XCB_CONFIG_WINDOW_Y, event.y);
+  appendIf(XCB_CONFIG_WINDOW_WIDTH, event.width);
+  appendIf(XCB_CONFIG_WINDOW_HEIGHT, event.height);
+  appendIf(XCB_CONFIG_WINDOW_BORDER_WIDTH, event.border_width);
+  appendIf(XCB_CONFIG_WINDOW_SIBLING, event.sibling);
+  appendIf(XCB_CONFIG_WINDOW_STACK_MODE, event.stack_mode);
 
-  xcb_configure_window(mEwmh.connection, aEvent->window, mask, values.data());
-  mPendingXRequests++;
+  xcb_configure_window(state.xcb.conn, state.xcb.window, mask, values.data());
+  ++state.xcb.pendingRequests;
 }
 
 void
-WindowManager::HandleConfigureNotify(const xcb_configure_notify_event_t* aEvent)
+configureNotify(State& state, xcb_configure_notify_event_t& event)
 {
-  if (aEvent->override_redirect || !mClients.contains(aEvent->window))
+  if (event.override_redirect || !state.clients.contains(event.window))
     return;
 
-  auto& client = mClients[aEvent->window];
-  client.mPosX = aEvent->x;
-  client.mPosY = aEvent->y;
-  client.mWidth = aEvent->width;
-  client.mHeight = aEvent->height;
-  client.mBorderWidth = aEvent->border_width;
+#ifndef NDEBUG
+  std::println(std::clog, "ConfigureNotify from {}", event.window);
+#endif
+
+  auto& client = state.clients.at(event.window);
+  client.x = event.x;
+  client.y = event.y;
+  client.width = event.width;
+  client.height = event.height;
+  client.borderWidth = event.border_width;
 }
 
 void
-WindowManager::HandleCreateNotify(const xcb_create_notify_event_t* aEvent)
+createNotify(State& state, xcb_create_notify_event_t& event)
 {
-  if (aEvent->override_redirect)
+  if (event.override_redirect)
     return;
-
-  if (IsDebug()) {
-    std::println(std::clog, "CreateNotify from {}", aEvent->window);
-
-    if (mClients.contains(aEvent->window)) {
-      std::println("InvalidState {}:{}   {}",
-                   __FILE_NAME__,
-                   __LINE__,
-                   "CreateNotify for existing client");
-      std::exit(1);
-    }
-  }
 
   if (xcb_request_check(
-        mEwmh.connection,
+        state.xcb.conn,
         xcb_composite_redirect_window_checked(
-          mEwmh.connection, aEvent->window, XCB_COMPOSITE_REDIRECT_MANUAL)))
+          state.xcb.conn, state.xcb.window, XCB_COMPOSITE_REDIRECT_MANUAL)))
     return;
 
-  mClients.emplace(aEvent->window,
-                   Client{
-                     .mPosX = aEvent->x,
-                     .mPosY = aEvent->y,
-                     .mWidth = aEvent->width,
-                     .mHeight = aEvent->height,
-                     .mBorderWidth = aEvent->border_width,
-                   });
+  state.clients.emplace(event.window,
+                        Client{
+                          .x = event.x,
+                          .y = event.y,
+                          .width = event.width,
+                          .height = event.height,
+                          .borderWidth = event.border_width,
+                        });
 }
 
 void
-WindowManager::HandleDestroyNotify(const xcb_destroy_notify_event_t* aEvent)
+destroyNotify(State& state, xcb_destroy_notify_event_t& event)
 {
-  mClients.erase(aEvent->window);
+  state.clients.erase(event.window);
 }
 
 void
-WindowManager::HandleEnterNotify(const xcb_enter_notify_event_t* aEvent)
-{
-}
-
-void
-WindowManager::HandleExpose(const xcb_expose_event_t* aEvent)
+enterNotify(State& state, xcb_enter_notify_event_t& event)
 {
 }
 
 void
-WindowManager::HandleFocusIn(const xcb_focus_in_event_t* aEvent)
+expose(State& state, xcb_expose_event_t& event)
 {
 }
 
 void
-WindowManager::HandleKeyPress(const xcb_key_press_event_t* aEvent)
+focusIn(State& state, xcb_focus_in_event_t& event)
 {
-  for (auto& keybind : mKeybinds) {
-    if (keybind.mKeycode == aEvent->detail && keybind.mMods == aEvent->state) {
-      keybind.mAction(this);
+}
+
+void
+keyPress(State& state, xcb_key_press_event_t& event)
+{
+  for (auto& keybind : state.keybinds) {
+    if (keybind.key == event.detail && keybind.mod == event.state) {
+      keybind.action(state);
       break;
     }
   }
 }
 
 void
-WindowManager::HandleKeyRelease(const xcb_key_release_event_t* aEvent)
+keyRelease(State& state, xcb_key_release_event_t& event)
 {
 }
 
 void
-WindowManager::HandleButtonPress(const xcb_button_press_event_t* aEvent)
+buttonPress(State& state, xcb_button_press_event_t& event)
 {
 }
 
 void
-WindowManager::HandleButtonRelease(const xcb_button_release_event_t* aEvent)
+buttonRelease(State& state, xcb_button_release_event_t& event)
 {
 }
 
 void
-WindowManager::HandleResizeRequest(const xcb_resize_request_event_t* Event)
+resizeRequest(State& state, xcb_resize_request_event_t& event)
 {
 }
 
 void
-WindowManager::HandleUnmapNotify(const xcb_unmap_notify_event_t* Event)
+unmapNotify(State& state, xcb_unmap_notify_event_t& event)
 {
 }
 
 void
-WindowManager::HandleClientMessage(const xcb_client_message_event_t* aEvent)
+clientMessage(State& state, xcb_client_message_event_t& event)
 { // TODO: have to unredirect full screen clients and redirect back when
   // not fullscreen
   // TODO: have to think about how apps do borderless fullscreen
-  if (IsDebug())
-    std::println(std::clog, "ClientMessage from {}", aEvent->window);
-
-  if (aEvent->type == mEwmh._NET_WM_STATE) {
-    // TODO:
-  }
+#ifndef NDEBUG
+  std::println(std::clog, "ClientMessage from {}", event.window);
+#endif
 }
 
 void
-WindowManager::HandlePropertyNotify(const xcb_property_notify_event_t* aEvent)
+propertyNotify(State& state, xcb_property_notify_event_t& event)
 {
-  if (IsDebug())
-    std::println(std::clog, "PropertyNotify from {}", aEvent->window);
+#ifndef NDEBUG
+  std::println(std::clog, "PropertyNotify from {}", event.window);
+#endif
 }
 
 void
-WindowManager::HandleMotionNotify(const xcb_motion_notify_event_t* aEvent)
+motionNotify(State& state, xcb_motion_notify_event_t& event)
 {
 }
 
 void
-WindowManager::HandleMapRequest(const xcb_map_request_event_t* aEvent)
+mapRequest(State& state, xcb_map_request_event_t& event)
 {
-  if (!mClients.contains(aEvent->window))
+  if (!state.clients.contains(event.window))
     return;
 
-  if (IsDebug())
-    std::println("MapRequest from {}", aEvent->window);
+#ifndef NDEBUG
+  std::println("MapRequest from {}", event.window);
+#endif
 
-  xcb_map_window(mEwmh.connection, aEvent->window);
-  mPendingXRequests++;
+  xcb_map_window(state.xcb.conn, event.window);
+  ++state.xcb.pendingRequests;
 }
 
 void
-WindowManager::HandleMapNotify(const xcb_map_notify_event_t* aEvent)
+mapNotify(State& state, xcb_map_notify_event_t& event)
 {
-  if (aEvent->override_redirect || !mClients.contains(aEvent->window))
+  if (event.override_redirect || !state.clients.contains(event.window))
     return;
 
-  if (IsDebug())
-    std::println(std::clog, "MapNotify from {}", aEvent->window);
+#ifndef NDEBUG
+  std::println(std::clog, "MapNotify from {}", event.window);
+#endif
 
-  auto& client = mClients.at(aEvent->window);
-  client.mXPixmap = xcb_generate_id(mEwmh.connection);
-
-  xcb_composite_name_window_pixmap(
-    mEwmh.connection, aEvent->window, client.mXPixmap);
-  mPendingXRequests++;
+  auto& client = state.clients.at(event.window);
+  auto _ = client;
+  // TODO:
 }
 
 void
-WindowManager::HandleMappingNotify(const xcb_mapping_notify_event_t* aEvent)
+mappingNotify(State& state, xcb_mapping_notify_event_t& event)
 { // TODO: Update mappings here!
 }
 
 void
-WindowManager::HandleError(const xcb_generic_error_t* aError)
+error(State& state, xcb_generic_error_t& aError)
 {
   std::println(std::cerr, "Error!");
 }
 
 void
-WindowManager::HandleEvent(const xcb_generic_event_t* aEvent)
+genericEvent(State& state, xcb_generic_event_t* event)
 {
-  uint8_t eventType = aEvent->response_type & ~0x80;
+  uint8_t eventType = event->response_type & ~0x80;
   switch (eventType) {
     case XCB_CLIENT_MESSAGE:
-      HandleClientMessage(
-        reinterpret_cast<const xcb_client_message_event_t*>(aEvent));
+      clientMessage(state, *(xcb_client_message_event_t*)event);
       break;
 
     case XCB_MAP_REQUEST:
-      HandleMapRequest(
-        reinterpret_cast<const xcb_map_request_event_t*>(aEvent));
+      mapRequest(state, *(xcb_map_request_event_t*)event);
       break;
 
     case XCB_MAP_NOTIFY:
-      HandleMapNotify(reinterpret_cast<const xcb_map_notify_event_t*>(aEvent));
+      mapNotify(state, *(xcb_map_notify_event_t*)event);
       break;
 
     case XCB_CONFIGURE_REQUEST:
-      HandleConfigureRequest(
-        reinterpret_cast<const xcb_configure_request_event_t*>(aEvent));
+      configureRequest(state, *(xcb_configure_request_event_t*)event);
       break;
 
     case XCB_CONFIGURE_NOTIFY:
-      HandleConfigureNotify(
-        reinterpret_cast<const xcb_configure_notify_event_t*>(aEvent));
+      configureNotify(state, *(xcb_configure_notify_event_t*)event);
       break;
 
     case XCB_MOTION_NOTIFY:
-      HandleMotionNotify(
-        reinterpret_cast<const xcb_motion_notify_event_t*>(aEvent));
+      motionNotify(state, *(xcb_motion_notify_event_t*)event);
       break;
 
     case XCB_CREATE_NOTIFY:
-      HandleCreateNotify(
-        reinterpret_cast<const xcb_create_notify_event_t*>(aEvent));
+      createNotify(state, *(xcb_create_notify_event_t*)event);
       break;
 
     case XCB_DESTROY_NOTIFY:
-      HandleDestroyNotify(
-        reinterpret_cast<const xcb_destroy_notify_event_t*>(aEvent));
+      destroyNotify(state, *(xcb_destroy_notify_event_t*)event);
       break;
 
     case XCB_ENTER_NOTIFY:
-      HandleEnterNotify(
-        reinterpret_cast<const xcb_enter_notify_event_t*>(aEvent));
+      enterNotify(state, *(xcb_enter_notify_event_t*)event);
       break;
 
     case XCB_EXPOSE:
-      HandleExpose(reinterpret_cast<const xcb_expose_event_t*>(aEvent));
+      expose(state, *(xcb_expose_event_t*)event);
       break;
 
     case XCB_FOCUS_IN:
-      HandleFocusIn(reinterpret_cast<const xcb_focus_in_event_t*>(aEvent));
+      focusIn(state, *(xcb_focus_in_event_t*)event);
       break;
 
     case XCB_KEY_PRESS:
-      HandleKeyPress(reinterpret_cast<const xcb_key_press_event_t*>(aEvent));
+      keyPress(state, *(xcb_key_press_event_t*)event);
       break;
 
     case XCB_KEY_RELEASE:
-      HandleKeyRelease(
-        reinterpret_cast<const xcb_key_release_event_t*>(aEvent));
+      keyRelease(state, *(xcb_key_release_event_t*)event);
       break;
 
     case XCB_BUTTON_PRESS:
-      HandleButtonPress(
-        reinterpret_cast<const xcb_button_press_event_t*>(aEvent));
+      buttonPress(state, *(xcb_button_press_event_t*)event);
       break;
 
     case XCB_BUTTON_RELEASE:
-      HandleButtonRelease(
-        reinterpret_cast<const xcb_button_release_event_t*>(aEvent));
+      buttonRelease(state, *(xcb_button_release_event_t*)event);
       break;
 
     case XCB_MAPPING_NOTIFY:
-      HandleMappingNotify(
-        reinterpret_cast<const xcb_mapping_notify_event_t*>(aEvent));
+      mappingNotify(state, *(xcb_mapping_notify_event_t*)event);
       break;
 
     case XCB_PROPERTY_NOTIFY:
-      HandlePropertyNotify(
-        reinterpret_cast<const xcb_property_notify_event_t*>(aEvent));
+      propertyNotify(state, *(xcb_property_notify_event_t*)event);
       break;
 
     case XCB_RESIZE_REQUEST:
-      HandleResizeRequest(
-        reinterpret_cast<const xcb_resize_request_event_t*>(aEvent));
+      resizeRequest(state, *(xcb_resize_request_event_t*)event);
       break;
 
     case XCB_UNMAP_NOTIFY:
-      HandleUnmapNotify(
-        reinterpret_cast<const xcb_unmap_notify_event_t*>(aEvent));
+      unmapNotify(state, *(xcb_unmap_notify_event_t*)event);
       break;
 
     case 0:
-      HandleError(reinterpret_cast<const xcb_generic_error_t*>(aEvent));
+      handlers::error(state, *(xcb_generic_error_t*)event);
       break;
 
     default:

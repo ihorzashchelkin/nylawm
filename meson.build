@@ -6,41 +6,22 @@ project(
 
 executable(
   'nyla',
-  ['src/main.cpp'],
+  [
+    'src/main.cpp',
+    'src/nyla.cpp',
+    'src/handlers.cpp',
+    'src/backend_egl.cpp'
+  ],
   dependencies: [
     dependency('gl'),
     dependency('egl'),
-    dependency('epoxy'),
-    dependency('x11'),
-    dependency('x11-xcb'),
     dependency('xcb'),
+    dependency('xcb-composite'),
+    dependency('xcb-damage'),
     dependency('xcb-errors'),
     dependency('xcb-keysyms'),
-    dependency('xcb-ewmh'),
-    dependency('xcb-composite'),
     dependency('xcb-util'),
-    dependency('xcb-randr'),
-    dependency('xcb-damage'),
   ]
 )
 
-executable(
-  'testegl',
-  ['src/testegl.cpp'],
-  dependencies: [
-    dependency('gl'),
-    dependency('egl'),
-    dependency('epoxy'),
-    dependency('x11'),
-    dependency('x11-xcb'),
-    dependency('xcb'),
-    dependency('xcb-errors'),
-    dependency('xcb-keysyms'),
-    dependency('xcb-ewmh'),
-    dependency('xcb-composite'),
-    dependency('xcb-util'),
-    dependency('xcb-randr'),
-    dependency('xcb-damage'),
-  ]
-)
 

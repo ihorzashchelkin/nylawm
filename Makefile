@@ -12,7 +12,7 @@ clean:
 	rm compile_commands.json
 
 run:
-	build/wm
+	build/nyla
 
 xev:
 	DISPLAY=:1 xev -root \
