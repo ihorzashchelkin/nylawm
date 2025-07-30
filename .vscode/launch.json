@@ -5,7 +5,7 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/wm",
+            "program": "${workspaceFolder}/build/nyla",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",

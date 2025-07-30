@@ -1,4 +1,3 @@
-#include "src/nyla.hpp"
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <EGL/eglplatform.h>
@@ -12,7 +11,6 @@
 #include <xcb/xcb.h>
 #include <xcb/xcb_aux.h>
 #include <xcb/xproto.h>
-#include <xcb/dri3.h>
 
 #include <cassert>
 #include <cstddef>
@@ -96,10 +94,8 @@ initEgl(State& state)
     return "could not select opengl for egl";
 
   const char* availableExts = eglQueryString(state.egl.dpy, EGL_EXTENSIONS);
-  const char* requiredExts[]{ "EGL_KHR_no_config_context",
-                              "EGL_KHR_surfaceless_context" };
-
-  for (auto ext : std::span{ requiredExts }) {
+  for (auto ext :
+       { "EGL_KHR_no_config_context", "EGL_KHR_surfaceless_context" }) {
     if (!strstr(availableExts, ext))
       return "one or more of required egl extensions is missing";
   }

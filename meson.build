@@ -18,6 +18,7 @@ executable(
     dependency('xcb'),
     dependency('xcb-composite'),
     dependency('xcb-damage'),
+    dependency('xcb-dri3'),
     dependency('xcb-errors'),
     dependency('xcb-keysyms'),
     dependency('xcb-util'),

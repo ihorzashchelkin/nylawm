@@ -1,29 +1,30 @@
-#include <array>
+#include "nyla.hpp"
 
 #include <X11/keysym.h>
 #include <xcb/xproto.h>
 
-#include "nyla.hpp"
+#include <iostream>
+#include <print>
 
-inline constexpr const char* const term_command[] = { "ghostty", nullptr };
+inline const char* const term_command[] = { "ghostty", nullptr };
 
-inline constexpr xcb_mod_mask_t kMod = XCB_MOD_MASK_4;
-inline constexpr xcb_mod_mask_t kShift = XCB_MOD_MASK_SHIFT;
-inline constexpr auto bindings = std::to_array<const nyla::Keybind>({
+#define MOD XCB_MOD_MASK_4
+
+static nyla::Keybind keybinds[]{
   {
-    kMod,
+    MOD,
     XK_Return,
     [](auto state) { nyla::spawn(state, term_command); },
   },
   {
-    kMod | kShift,
+    MOD | XCB_MOD_MASK_SHIFT,
     XK_Q,
     [](auto state) { nyla::quit(state); },
   },
   // { kMod,          XK_C,      [](auto x) { x->Kill(); } },
   // { kMod,          XK_U,      [](auto x) { x->SwitchToPrevWorkspace(); } },
   // { kMod,          XK_I,      [](auto x) { x->SwitchToNextWorkspace(); } },
-});
+};
 
 int
 main(int argc, char* argv[])
@@ -32,8 +33,15 @@ main(int argc, char* argv[])
 
   nyla::State state{};
 
-  nyla::initXcb(state, bindings);
-  nyla::initEgl(state);
-  nyla::preRun(state);
+  if (auto err = nyla::initXcb(state, keybinds); err) {
+    std::println(std::cerr, "initXcb: {}", err);
+    return 1;
+  }
+
+  if (auto err = nyla::initEgl(state); err) {
+    std::println(std::cerr, "initEgl: {}", err);
+    return 1;
+  }
+
   nyla::run(state);
 }

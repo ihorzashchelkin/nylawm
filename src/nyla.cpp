@@ -1,3 +1,4 @@
+#include <EGL/egl.h>
 #include <X11/Xutil.h>
 #include <csignal>
 #include <iostream>
@@ -6,15 +7,14 @@
 
 #include <fcntl.h>
 #include <sys/wait.h>
+#include <thread>
 #include <unistd.h>
-
-#include <epoxy/gl.h>
-#include <epoxy/glx.h>
 
 #include <X11/Xlib-xcb.h>
 #include <X11/Xlib.h>
 #include <xcb/composite.h>
 #include <xcb/damage.h>
+#include <xcb/dri3.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_aux.h>
 #include <xcb/xcb_errors.h>
@@ -36,6 +36,9 @@ initXcb(State& state, std::span<const Keybind> keybinds)
   state.xcb.screen = xcb_aux_get_screen(state.xcb.conn, iscreen);
   if (!state.xcb.screen)
     return "could not get screen";
+
+  if (xcb_errors_context_new(state.xcb.conn, &state.xcb.errorContext))
+    return "could not create xcb error context";
 
   state.xcb.window = xcb_generate_id(state.xcb.conn);
   if (xcb_request_check(
@@ -98,18 +101,6 @@ initXcb(State& state, std::span<const Keybind> keybinds)
 }
 
 void
-preRun(State& state)
-{
-  struct sigaction sa;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_handler = SIG_IGN;
-  sigaction(SIGCHLD, &sa, nullptr);
-
-  while (waitpid(-1, nullptr, WNOHANG) > 0)
-    ;
-}
-
-void
 grabKeys(State& state)
 {
   for (auto& keybind : state.keybinds) {
@@ -124,17 +115,52 @@ grabKeys(State& state)
   xcb_flush(state.xcb.conn);
 }
 
+static void
+render(State& state)
+{
+  for (auto [window, client] : state.clients) {
+    if (!client.pixmap)
+      continue;
+
+#if 0
+    xcb_dri3_buffer_from_pixmap(state.xcb.conn, client.pixmap);
+
+    if (auto reply =
+          xcb_dri3_buffer_from_pixmap_reply(state.xcb.conn, , nullptr);
+        reply) {
+
+      int fd = xcb_dri3_buffer_from_pixmap_reply_fds(state.xcb.conn, reply)[0];
+
+      EGLImage image = eglCreateImage(
+        state.egl.dpy, state.egl.context, EGL_GL_TEXTURE_2D, &fd, nullptr);
+      std::println("{}", long(image));
+
+      // free(reply);
+    }
+#endif
+  }
+
+  using namespace std::chrono_literals;
+  std::this_thread::sleep_for(30ms);
+}
+
 void
 run(State& state)
 {
+  struct sigaction sa;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_handler = SIG_IGN;
+  sigaction(SIGCHLD, &sa, nullptr);
+
+  while (waitpid(-1, nullptr, WNOHANG) > 0)
+    ;
+
   state.flags.set(State::Flag_Running);
 
-outerLoop:
   while (state.flags.test(State::Flag_Running)) {
-    for (xcb_generic_event_t* event = xcb_poll_for_event(state.xcb.conn); event;
-         event = xcb_poll_for_event(state.xcb.conn)) {
-
-      handlers::genericEvent(state, event);
+    xcb_generic_event_t* event = xcb_poll_for_event(state.xcb.conn);
+    if (event) {
+      handleEvent(state, event);
 
       if (state.xcb.pendingRequests >= 32) {
         xcb_flush(state.xcb.conn);
@@ -142,17 +168,23 @@ outerLoop:
       }
 
       free(event);
+      continue;
     }
 
-    if (xcb_connection_has_error(state.xcb.conn)) {
-      state.flags.reset(State::Flag_Running);
-      goto outerLoop;
+    if (auto err = xcb_connection_has_error(state.xcb.conn); err) {
+      std::println(
+        std::cerr,
+        "xcb connection error: Bad{}",
+        xcb_errors_get_name_for_error(state.xcb.errorContext, err, nullptr));
+      break;
     }
 
     if (state.xcb.pendingRequests > 0) {
       xcb_flush(state.xcb.conn);
       state.xcb.pendingRequests = 0;
     }
+
+    render(state);
   }
 }
 

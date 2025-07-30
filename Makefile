@@ -21,5 +21,5 @@ xev:
 		-event property
 
 xephyr:
-	Xephyr -br -ac -noreset +extension RANDR +extension GLX -screen 1200x800 :1
+	Xephyr -screen 1366x768 -ac -br -resizeable -glamor :1
 

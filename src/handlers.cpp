@@ -1,48 +1,48 @@
-#include <X11/Xlib.h>
 #include <cstdint>
-#include <epoxy/glx_generated.h>
 #include <iostream>
 #include <print>
+
+#include <X11/Xlib.h>
+
 #include <xcb/composite.h>
 #include <xcb/xcb.h>
+#include <xcb/xcb_aux.h>
 #include <xcb/xcb_errors.h>
 #include <xcb/xproto.h>
 
 #include "src/nyla.hpp"
 
-namespace nyla::handlers {
+namespace nyla {
 
-void
-configureRequest(State& state, xcb_configure_request_event_t& event)
+static void
+handleConfigureRequest(State& state, xcb_configure_request_event_t& event)
 {
 #ifndef NDEBUG
   std::println(std::clog, "ConfigureRequest from {}", event.window);
 #endif
 
-  uint32_t mask = 0;
-  std::vector<uint32_t> values(7);
+  uint32_t valueMask = 0;
+  uint32_t values[2];
+  int c = 0;
 
-  auto appendIf = [&](uint32_t flag, uint32_t val) {
-    if (event.value_mask & flag) {
-      mask |= flag;
-      values.push_back(val);
-    }
-  };
+  // TODO:
 
-  appendIf(XCB_CONFIG_WINDOW_X, event.x);
-  appendIf(XCB_CONFIG_WINDOW_Y, event.y);
-  appendIf(XCB_CONFIG_WINDOW_WIDTH, event.width);
-  appendIf(XCB_CONFIG_WINDOW_HEIGHT, event.height);
-  appendIf(XCB_CONFIG_WINDOW_BORDER_WIDTH, event.border_width);
-  appendIf(XCB_CONFIG_WINDOW_SIBLING, event.sibling);
-  appendIf(XCB_CONFIG_WINDOW_STACK_MODE, event.stack_mode);
+  if (event.value_mask & XCB_CONFIG_WINDOW_WIDTH) {
+    valueMask |= XCB_CONFIG_WINDOW_WIDTH;
+    values[c++] = event.width;
+  }
 
-  xcb_configure_window(state.xcb.conn, state.xcb.window, mask, values.data());
+  if (event.value_mask & XCB_CONFIG_WINDOW_HEIGHT) {
+    valueMask |= XCB_CONFIG_WINDOW_HEIGHT;
+    values[c++] = event.height;
+  }
+
+  xcb_configure_window(state.xcb.conn, event.window, valueMask, values);
   ++state.xcb.pendingRequests;
 }
 
-void
-configureNotify(State& state, xcb_configure_notify_event_t& event)
+static void
+handleConfigureNotify(State& state, xcb_configure_notify_event_t& event)
 {
   if (event.override_redirect || !state.clients.contains(event.window))
     return;
@@ -59,8 +59,8 @@ configureNotify(State& state, xcb_configure_notify_event_t& event)
   client.borderWidth = event.border_width;
 }
 
-void
-createNotify(State& state, xcb_create_notify_event_t& event)
+static void
+handleCreateNotify(State& state, xcb_create_notify_event_t& event)
 {
   if (event.override_redirect)
     return;
@@ -81,29 +81,29 @@ createNotify(State& state, xcb_create_notify_event_t& event)
                         });
 }
 
-void
-destroyNotify(State& state, xcb_destroy_notify_event_t& event)
+static void
+handleDestroyNotify(State& state, xcb_destroy_notify_event_t& event)
 {
   state.clients.erase(event.window);
 }
 
-void
-enterNotify(State& state, xcb_enter_notify_event_t& event)
+static void
+handleEnterNotify(State& state, xcb_enter_notify_event_t& event)
 {
 }
 
-void
-expose(State& state, xcb_expose_event_t& event)
+static void
+handleExpose(State& state, xcb_expose_event_t& event)
 {
 }
 
-void
-focusIn(State& state, xcb_focus_in_event_t& event)
+static void
+handleFocusIn(State& state, xcb_focus_in_event_t& event)
 {
 }
 
-void
-keyPress(State& state, xcb_key_press_event_t& event)
+static void
+handleKeyPress(State& state, xcb_key_press_event_t& event)
 {
   for (auto& keybind : state.keybinds) {
     if (keybind.key == event.detail && keybind.mod == event.state) {
@@ -113,33 +113,33 @@ keyPress(State& state, xcb_key_press_event_t& event)
   }
 }
 
-void
-keyRelease(State& state, xcb_key_release_event_t& event)
+static void
+handleKeyRelease(State& state, xcb_key_release_event_t& event)
 {
 }
 
-void
-buttonPress(State& state, xcb_button_press_event_t& event)
+static void
+handleButtonPress(State& state, xcb_button_press_event_t& event)
 {
 }
 
-void
-buttonRelease(State& state, xcb_button_release_event_t& event)
+static void
+handleButtonRelease(State& state, xcb_button_release_event_t& event)
 {
 }
 
-void
-resizeRequest(State& state, xcb_resize_request_event_t& event)
+static void
+handleResizeRequest(State& state, xcb_resize_request_event_t& event)
 {
 }
 
-void
-unmapNotify(State& state, xcb_unmap_notify_event_t& event)
+static void
+handleUnmapNotify(State& state, xcb_unmap_notify_event_t& event)
 {
 }
 
-void
-clientMessage(State& state, xcb_client_message_event_t& event)
+static void
+handleClientMessage(State& state, xcb_client_message_event_t& event)
 { // TODO: have to unredirect full screen clients and redirect back when
   // not fullscreen
   // TODO: have to think about how apps do borderless fullscreen
@@ -148,21 +148,21 @@ clientMessage(State& state, xcb_client_message_event_t& event)
 #endif
 }
 
-void
-propertyNotify(State& state, xcb_property_notify_event_t& event)
+static void
+handlePropertyNotify(State& state, xcb_property_notify_event_t& event)
 {
 #ifndef NDEBUG
   std::println(std::clog, "PropertyNotify from {}", event.window);
 #endif
 }
 
-void
-motionNotify(State& state, xcb_motion_notify_event_t& event)
+static void
+handleMotionNotify(State& state, xcb_motion_notify_event_t& event)
 {
 }
 
-void
-mapRequest(State& state, xcb_map_request_event_t& event)
+static void
+handleMapRequest(State& state, xcb_map_request_event_t& event)
 {
   if (!state.clients.contains(event.window))
     return;
@@ -175,8 +175,8 @@ mapRequest(State& state, xcb_map_request_event_t& event)
   ++state.xcb.pendingRequests;
 }
 
-void
-mapNotify(State& state, xcb_map_notify_event_t& event)
+static void
+handleMapNotify(State& state, xcb_map_notify_event_t& event)
 {
   if (event.override_redirect || !state.clients.contains(event.window))
     return;
@@ -185,105 +185,124 @@ mapNotify(State& state, xcb_map_notify_event_t& event)
   std::println(std::clog, "MapNotify from {}", event.window);
 #endif
 
-  auto& client = state.clients.at(event.window);
+  Client& client = state.clients.at(event.window);
   auto _ = client;
-  // TODO:
+
+  xcb_request_check(
+    state.xcb.conn,
+    xcb_composite_redirect_window_checked(
+      state.xcb.conn, event.window, XCB_COMPOSITE_REDIRECT_MANUAL));
+
+  client.pixmap = xcb_generate_id(state.xcb.conn);
+
+  xcb_request_check(state.xcb.conn,
+                    xcb_composite_name_window_pixmap_checked(
+                      state.xcb.conn, event.window, client.pixmap));
+
+  xcb_aux_sync(state.xcb.conn);
 }
 
-void
-mappingNotify(State& state, xcb_mapping_notify_event_t& event)
+static void
+handleMappingNotify(State& state, xcb_mapping_notify_event_t& event)
 { // TODO: Update mappings here!
 }
 
-void
-error(State& state, xcb_generic_error_t& aError)
+static void
+handleXcbError(State& state, xcb_generic_error_t& error)
 {
+#ifdef NDEBUG
   std::println(std::cerr, "Error!");
+#else
+  std::println(std::cerr,
+               "Bad{}",
+               xcb_errors_get_name_for_error(
+                 state.xcb.errorContext, error.error_code, nullptr));
+#endif
 }
 
 void
-genericEvent(State& state, xcb_generic_event_t* event)
+handleEvent(State& state, xcb_generic_event_t* event)
 {
   uint8_t eventType = event->response_type & ~0x80;
   switch (eventType) {
     case XCB_CLIENT_MESSAGE:
-      clientMessage(state, *(xcb_client_message_event_t*)event);
+      handleClientMessage(state, *(xcb_client_message_event_t*)event);
       break;
 
     case XCB_MAP_REQUEST:
-      mapRequest(state, *(xcb_map_request_event_t*)event);
+      handleMapRequest(state, *(xcb_map_request_event_t*)event);
       break;
 
     case XCB_MAP_NOTIFY:
-      mapNotify(state, *(xcb_map_notify_event_t*)event);
+      handleMapNotify(state, *(xcb_map_notify_event_t*)event);
       break;
 
     case XCB_CONFIGURE_REQUEST:
-      configureRequest(state, *(xcb_configure_request_event_t*)event);
+      handleConfigureRequest(state, *(xcb_configure_request_event_t*)event);
       break;
 
     case XCB_CONFIGURE_NOTIFY:
-      configureNotify(state, *(xcb_configure_notify_event_t*)event);
+      handleConfigureNotify(state, *(xcb_configure_notify_event_t*)event);
       break;
 
     case XCB_MOTION_NOTIFY:
-      motionNotify(state, *(xcb_motion_notify_event_t*)event);
+      handleMotionNotify(state, *(xcb_motion_notify_event_t*)event);
       break;
 
     case XCB_CREATE_NOTIFY:
-      createNotify(state, *(xcb_create_notify_event_t*)event);
+      handleCreateNotify(state, *(xcb_create_notify_event_t*)event);
       break;
 
     case XCB_DESTROY_NOTIFY:
-      destroyNotify(state, *(xcb_destroy_notify_event_t*)event);
+      handleDestroyNotify(state, *(xcb_destroy_notify_event_t*)event);
       break;
 
     case XCB_ENTER_NOTIFY:
-      enterNotify(state, *(xcb_enter_notify_event_t*)event);
+      handleEnterNotify(state, *(xcb_enter_notify_event_t*)event);
       break;
 
     case XCB_EXPOSE:
-      expose(state, *(xcb_expose_event_t*)event);
+      handleExpose(state, *(xcb_expose_event_t*)event);
       break;
 
     case XCB_FOCUS_IN:
-      focusIn(state, *(xcb_focus_in_event_t*)event);
+      handleFocusIn(state, *(xcb_focus_in_event_t*)event);
       break;
 
     case XCB_KEY_PRESS:
-      keyPress(state, *(xcb_key_press_event_t*)event);
+      handleKeyPress(state, *(xcb_key_press_event_t*)event);
       break;
 
     case XCB_KEY_RELEASE:
-      keyRelease(state, *(xcb_key_release_event_t*)event);
+      handleKeyRelease(state, *(xcb_key_release_event_t*)event);
       break;
 
     case XCB_BUTTON_PRESS:
-      buttonPress(state, *(xcb_button_press_event_t*)event);
+      handleButtonPress(state, *(xcb_button_press_event_t*)event);
       break;
 
     case XCB_BUTTON_RELEASE:
-      buttonRelease(state, *(xcb_button_release_event_t*)event);
+      handleButtonRelease(state, *(xcb_button_release_event_t*)event);
       break;
 
     case XCB_MAPPING_NOTIFY:
-      mappingNotify(state, *(xcb_mapping_notify_event_t*)event);
+      handleMappingNotify(state, *(xcb_mapping_notify_event_t*)event);
       break;
 
     case XCB_PROPERTY_NOTIFY:
-      propertyNotify(state, *(xcb_property_notify_event_t*)event);
+      handlePropertyNotify(state, *(xcb_property_notify_event_t*)event);
       break;
 
     case XCB_RESIZE_REQUEST:
-      resizeRequest(state, *(xcb_resize_request_event_t*)event);
+      handleResizeRequest(state, *(xcb_resize_request_event_t*)event);
       break;
 
     case XCB_UNMAP_NOTIFY:
-      unmapNotify(state, *(xcb_unmap_notify_event_t*)event);
+      handleUnmapNotify(state, *(xcb_unmap_notify_event_t*)event);
       break;
 
     case 0:
-      handlers::error(state, *(xcb_generic_error_t*)event);
+      handleXcbError(state, *(xcb_generic_error_t*)event);
       break;
 
     default:
