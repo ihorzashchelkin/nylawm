@@ -10,7 +10,7 @@ executable(
     'src/main.cpp',
     'src/nyla.cpp',
     'src/handlers.cpp',
-    'src/backend_egl.cpp'
+    'src/compositor.cpp'
   ],
   dependencies: [
     dependency('gl'),

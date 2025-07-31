@@ -188,16 +188,20 @@ handleMapNotify(State& state, xcb_map_notify_event_t& event)
   Client& client = state.clients.at(event.window);
   auto _ = client;
 
-  xcb_request_check(
-    state.xcb.conn,
-    xcb_composite_redirect_window_checked(
-      state.xcb.conn, event.window, XCB_COMPOSITE_REDIRECT_MANUAL));
+  if (xcb_request_check(
+        state.xcb.conn,
+        xcb_composite_redirect_window_checked(
+          state.xcb.conn, event.window, XCB_COMPOSITE_REDIRECT_MANUAL))) {
+    std::println(std::clog, "xcb_composite_redirect_window_checked failed");
+  }
 
   client.pixmap = xcb_generate_id(state.xcb.conn);
 
-  xcb_request_check(state.xcb.conn,
-                    xcb_composite_name_window_pixmap_checked(
-                      state.xcb.conn, event.window, client.pixmap));
+  if (xcb_request_check(state.xcb.conn,
+                        xcb_composite_name_window_pixmap_checked(
+                          state.xcb.conn, event.window, client.pixmap))) {
+    std::println(std::clog, "xcb_composite_name_window_pixmap_checked failed");
+  }
 
   xcb_aux_sync(state.xcb.conn);
 }

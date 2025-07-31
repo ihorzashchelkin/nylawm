@@ -9,10 +9,10 @@
 #include <span>
 #include <unistd.h>
 
+#include <xcb/dri3.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_aux.h>
 #include <xcb/xproto.h>
-#include <xcb/dri3.h>
 
 #include <cassert>
 #include <cstddef>
@@ -97,7 +97,8 @@ initEgl(State& state)
 
   const char* availableExts = eglQueryString(state.egl.dpy, EGL_EXTENSIONS);
   const char* requiredExts[]{ "EGL_KHR_no_config_context",
-                              "EGL_KHR_surfaceless_context" };
+                              "EGL_KHR_surfaceless_context",
+                              "EGL_KHR_image_pixmap" };
 
   for (auto ext : std::span{ requiredExts }) {
     if (!strstr(availableExts, ext))
