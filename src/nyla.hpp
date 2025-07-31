@@ -1,16 +1,40 @@
 #pragma once
 
 #include <bitset>
+#include <cassert>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <ctime>
+#include <format>
+#include <iostream>
+#include <iterator>
+#include <print>
 #include <span>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
-#include <EGL/egl.h>
+#include <fcntl.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
+#include <X11/Xlib.h>
+#include <X11/keysym.h>
+
+#include <xcb/composite.h>
+#include <xcb/damage.h>
+#include <xcb/dri3.h>
 #include <xcb/xcb.h>
+#include <xcb/xcb_aux.h>
 #include <xcb/xcb_errors.h>
+#include <xcb/xcb_keysyms.h>
 #include <xcb/xproto.h>
+
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
+#include <EGL/eglplatform.h>
+#include <GL/glcorearb.h>
 
 namespace nyla {
 
@@ -74,9 +98,6 @@ initEgl(State& state);
 
 void
 run(State& state);
-
-void
-grabKeys(State& state);
 
 void
 spawn(State& state, const char* const command[]);

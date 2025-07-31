@@ -1,15 +1,3 @@
-#include <cstdint>
-#include <iostream>
-#include <print>
-
-#include <X11/Xlib.h>
-
-#include <xcb/composite.h>
-#include <xcb/xcb.h>
-#include <xcb/xcb_aux.h>
-#include <xcb/xcb_errors.h>
-#include <xcb/xproto.h>
-
 #include "src/nyla.hpp"
 
 namespace nyla {

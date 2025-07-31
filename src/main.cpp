@@ -1,10 +1,13 @@
 #include "nyla.hpp"
 
-#include <X11/keysym.h>
-#include <xcb/xproto.h>
-
-#include <iostream>
-#include <print>
+// clang-format off
+#include "nyla.cpp"
+#include "window_manager.cpp"
+#include "actions.cpp"
+#include "handlers.cpp"
+#include "compositor.cpp"
+#include "shader_sources.cpp"
+// clang-format on
 
 inline const char* const term_command[] = { "ghostty", nullptr };
 
@@ -29,7 +32,9 @@ static nyla::Keybind keybinds[]{
 int
 main(int argc, char* argv[])
 {
+#if 0
   putenv(const_cast<char*>("DISPLAY=:1"));
+#endif
 
   nyla::State state{};
 

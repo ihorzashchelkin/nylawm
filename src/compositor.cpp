@@ -1,24 +1,7 @@
 #include "src/nyla.hpp"
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
-#include <EGL/eglplatform.h>
-#include <GL/glcorearb.h>
-
-#include <format>
-#include <iterator>
-#include <span>
-#include <unistd.h>
-
-#include <xcb/dri3.h>
-#include <xcb/xcb.h>
-#include <xcb/xcb_aux.h>
-#include <xcb/xproto.h>
-
-#include <cassert>
-#include <cstddef>
-#include <cstring>
-#include <ctime>
-#include <iostream>
+#include <X11/Xlib.h>
 #include <print>
 
 namespace nyla {
@@ -80,12 +63,32 @@ GLDebugMessageCallback(GLenum aSource,
 const char*
 initEgl(State& state)
 {
+  // TODO: switch to XLib!!!
+
+  EGLint major, minor;
+
+  if (false) {
+    Display* display = XOpenDisplay(nullptr);
+    if (display) {
+      EGLDisplay eglDisplay =
+        eglGetPlatformDisplay(EGL_PLATFORM_X11_KHR, display, nullptr);
+      if (eglDisplay && eglInitialize(eglDisplay, &major, &minor) &&
+          eglBindAPI(EGL_OPENGL_API)) {
+
+        const char* availableExts = eglQueryString(eglDisplay, EGL_EXTENSIONS);
+        std::println("{}", availableExts);
+      }
+
+      XCloseDisplay(display);
+      return nullptr;
+    }
+  }
+
   state.egl.dpy =
     eglGetPlatformDisplay(EGL_PLATFORM_XCB_EXT, state.xcb.conn, nullptr);
   if (!state.egl.dpy)
     return "could not create egl display";
 
-  EGLint major, minor;
   if (!eglInitialize(state.egl.dpy, &major, &minor))
     return "could not initialize egl display";
 
@@ -96,13 +99,14 @@ initEgl(State& state)
     return "could not select opengl for egl";
 
   const char* availableExts = eglQueryString(state.egl.dpy, EGL_EXTENSIONS);
-  const char* requiredExts[]{ "EGL_KHR_no_config_context",
-                              "EGL_KHR_surfaceless_context",
-                              "EGL_KHR_image_pixmap" };
+  std::println("{}", availableExts);
 
-  for (auto ext : std::span{ requiredExts }) {
+  for (auto ext : { "EGL_EXT_platform_xcb",
+                    "EGL_KHR_no_config_context",
+                    "EGL_KHR_surfaceless_context",
+                    "EGL_KHR_image_pixmap" }) {
     if (!strstr(availableExts, ext))
-      return "one or more of required egl extensions is missing";
+      return ext;
   }
 
   {

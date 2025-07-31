@@ -6,15 +6,11 @@ project(
 
 executable(
   'nyla',
-  [
-    'src/main.cpp',
-    'src/nyla.cpp',
-    'src/handlers.cpp',
-    'src/compositor.cpp'
-  ],
+  ['src/main.cpp'],
   dependencies: [
     dependency('gl'),
     dependency('egl'),
+    dependency('X11'),
     dependency('xcb'),
     dependency('xcb-composite'),
     dependency('xcb-damage'),
