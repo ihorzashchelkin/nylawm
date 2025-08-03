@@ -19,17 +19,10 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <X11/X.h>
 #include <X11/Xlib.h>
+#include <X11/extensions/Xcomposite.h>
 #include <X11/keysym.h>
-
-#include <xcb/composite.h>
-#include <xcb/damage.h>
-#include <xcb/dri3.h>
-#include <xcb/xcb.h>
-#include <xcb/xcb_aux.h>
-#include <xcb/xcb_errors.h>
-#include <xcb/xcb_keysyms.h>
-#include <xcb/xproto.h>
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -42,19 +35,19 @@ struct State;
 
 struct Keybind
 {
-  int mod;
-  uint32_t key;
+  unsigned int mod;
+  int key;
   void (*action)(State&);
 };
 
 struct Client
 {
-  xcb_pixmap_t pixmap;
-  int16_t x;
-  int16_t y;
-  uint16_t width;
-  uint16_t height;
-  uint16_t borderWidth;
+  Pixmap pixmap;
+  int x;
+  int y;
+  int width;
+  int height;
+  int borderWidth;
 };
 
 struct State
@@ -68,30 +61,24 @@ struct State
 
   struct
   {
-    xcb_connection_t* conn;
-    xcb_screen_t* screen;
-    xcb_window_t window;
+    Display* x11;
+    EGLDisplay egl;
+  } dpy;
 
-#ifndef NDEBUG
-    xcb_errors_context_t* errorContext;
-#endif
-
-    uint8_t pendingRequests;
-  } xcb;
+  Window window;
 
   struct
   {
-    EGLDisplay dpy;
     EGLContext context;
     EGLSurface surface;
   } egl;
 
   std::vector<Keybind> keybinds;
-  std::unordered_map<xcb_window_t, Client> clients;
+  std::unordered_map<Window, Client> clients;
 };
 
 const char*
-initXcb(State& state, std::span<const Keybind> keybinds);
+initX11(State& state, std::span<const Keybind> keybinds);
 
 const char*
 initEgl(State& state);
@@ -106,6 +93,6 @@ void
 quit(State& state);
 
 void
-handleEvent(State& state, xcb_generic_event_t* event);
+handleEvent(State& state, XEvent& event);
 
 }

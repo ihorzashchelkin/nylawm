@@ -1,5 +1,6 @@
 #include "nyla.hpp"
 
+#include <X11/Xlib.h>
 #include <csignal>
 #include <fcntl.h>
 #include <unistd.h>
@@ -16,14 +17,8 @@ void
 spawn(State& state, const char* const command[])
 {
   switch (fork()) {
-#if 0
-    case -1: {
-      std::println("fork() failed");
-    }
-#endif
-
     case 0: {
-      close(xcb_get_file_descriptor(state.xcb.conn));
+      close(ConnectionNumber(state.dpy.x11));
 
       {
         int devNull = open("/dev/null", O_RDONLY);

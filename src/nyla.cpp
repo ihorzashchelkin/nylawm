@@ -1,4 +1,5 @@
 #include "nyla.hpp"
+#include <X11/Xlib.h>
 
 namespace nyla {
 
@@ -40,7 +41,7 @@ render(State& state)
     // TODO: check why is this failing
     // https://registry.khronos.org/EGL/extensions/KHR/EGL_KHR_image_pixmap.txt
 
-    EGLImage image = eglCreateImage(state.egl.dpy,
+    EGLImage image = eglCreateImage(state.dpy.egl,
                                     EGL_NO_CONTEXT,
                                     EGL_NATIVE_PIXMAP_KHR,
                                     (EGLClientBuffer)(uintptr_t)client.pixmap,
@@ -51,7 +52,7 @@ render(State& state)
     } else {
       std::println("Success??");
 
-      eglDestroyImage(state.egl.dpy, image);
+      eglDestroyImage(state.dpy.egl, image);
     }
 
 #if 0
@@ -90,31 +91,12 @@ run(State& state)
   state.flags.set(State::Flag_Running);
 
   while (state.flags.test(State::Flag_Running)) {
-    xcb_generic_event_t* event = xcb_poll_for_event(state.xcb.conn);
-
-    if (event) {
+    XEvent event;
+    if (XPending(state.dpy.x11)) {
+      XNextEvent(state.dpy.x11, &event);
       handleEvent(state, event);
-
-      if (state.xcb.pendingRequests >= 32) {
-        xcb_flush(state.xcb.conn);
-        state.xcb.pendingRequests = 0;
-      }
-
-      free(event);
+      XFlush(state.dpy.x11);
       continue;
-    }
-
-    if (auto err = xcb_connection_has_error(state.xcb.conn); err) {
-      std::println(
-        std::cerr,
-        "xcb connection error: Bad{}",
-        xcb_errors_get_name_for_error(state.xcb.errorContext, err, nullptr));
-      break;
-    }
-
-    if (state.xcb.pendingRequests > 0) {
-      xcb_flush(state.xcb.conn);
-      state.xcb.pendingRequests = 0;
     }
 
     render(state);
