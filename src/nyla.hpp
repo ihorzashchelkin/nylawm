@@ -32,6 +32,7 @@
 #include <EGL/eglext.h>
 #include <EGL/eglplatform.h>
 #include <GL/glcorearb.h>
+#include <xcb/xproto.h>
 
 namespace nyla {
 
@@ -46,7 +47,7 @@ struct Keybind
 
 struct Client
 {
-  Pixmap pixmap;
+  xcb_pixmap_t pixmap;
   int x;
   int y;
   int width;

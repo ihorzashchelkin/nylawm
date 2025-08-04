@@ -1,7 +1,10 @@
 #include "nyla.hpp"
 #include <X11/Xlib.h>
+#include <iostream>
 #include <print>
+#include <xcb/composite.h>
 #include <xcb/dri3.h>
+#include <xcb/xcb.h>
 
 namespace nyla {
 
@@ -40,6 +43,15 @@ render(State& state)
     if (!client.pixmap)
       continue;
 
+    client.pixmap = xcb_generate_id(state.dpy.xcb);
+    if (xcb_request_check(state.dpy.xcb,
+                          xcb_composite_name_window_pixmap_checked(
+                            state.dpy.xcb, window, client.pixmap))) {
+      std::println(std::cerr,
+                   "xcb_composite_name_window_pixmap_checked FAILED");
+      exit(1);
+    }
+
     // TODO: check why is this failing
     // https://registry.khronos.org/EGL/extensions/KHR/EGL_KHR_image_pixmap.txt
 
@@ -54,10 +66,10 @@ render(State& state)
       std::println(std::cerr,
                    "buffer_from_pixmap failed: X error code {}",
                    err ? err->error_code : -1);
+      std::exit(1);
     }
 
     if (reply) {
-
       int fd = xcb_dri3_buffer_from_pixmap_reply_fds(state.dpy.xcb, reply)[0];
 
       EGLImage image = eglCreateImage(
@@ -66,8 +78,6 @@ render(State& state)
 
       // free(reply);
     }
-
-    std::exit(0);
   }
 
   using namespace std::chrono_literals;
