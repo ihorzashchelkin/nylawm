@@ -20,9 +20,13 @@
 #include <unistd.h>
 
 #include <X11/X.h>
+#include <X11/Xlib-xcb.h>
 #include <X11/Xlib.h>
 #include <X11/extensions/Xcomposite.h>
 #include <X11/keysym.h>
+#include <xcb/composite.h>
+#include <xcb/dri3.h>
+#include <xcb/xcb.h>
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -63,6 +67,7 @@ struct State
   {
     Display* x11;
     EGLDisplay egl;
+    xcb_connection_t* xcb;
   } dpy;
 
   Window window;
@@ -93,6 +98,6 @@ void
 quit(State& state);
 
 void
-handleEvent(State& state, XEvent& event);
+handleEvent(State& state, XEvent* event);
 
 }

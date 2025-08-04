@@ -1,7 +1,8 @@
 #include "src/nyla.hpp"
-#include <X11/Xlib.h>
-#include <X11/extensions/Xcomposite.h>
-#include <cstdint>
+#include <print>
+#include <xcb/composite.h>
+#include <xcb/xcb.h>
+#include <xcb/xproto.h>
 
 namespace nyla {
 
@@ -9,7 +10,7 @@ static void
 handleConfigureRequest(State& state, XConfigureRequestEvent& event)
 {
 #ifndef NDEBUG
-  std::println(std::clog, "ConfigureRequest from {}", event.window);
+  std::println(std::cerr, "ConfigureRequest from {}", event.window);
 #endif
 
   uint32_t changesMask = 0;
@@ -51,12 +52,12 @@ handleConfigureRequest(State& state, XConfigureRequestEvent& event)
 static void
 handleConfigureNotify(State& state, XConfigureEvent& event)
 {
+#ifndef NDEBUG
+  std::println(std::cerr, "ConfigureNotify from {}", event.window);
+#endif
+
   if (event.override_redirect || !state.clients.contains(event.window))
     return;
-
-#ifndef NDEBUG
-  std::println(std::clog, "ConfigureNotify from {}", event.window);
-#endif
 
   auto& client = state.clients.at(event.window);
   client.x = event.x;
@@ -69,6 +70,10 @@ handleConfigureNotify(State& state, XConfigureEvent& event)
 static void
 handleCreateNotify(State& state, XCreateWindowEvent& event)
 {
+#ifndef NDEBUG
+  std::println(std::cerr, "CreateNotify from {}", event.window);
+#endif
+
   if (event.override_redirect)
     return;
 
@@ -149,7 +154,7 @@ handleClientMessage(State& state, XClientMessageEvent& event)
   // not fullscreen
   // TODO: have to think about how apps do borderless fullscreen
 #ifndef NDEBUG
-  std::println(std::clog, "ClientMessage from {}", event.window);
+  std::println(std::cerr, "ClientMessage from {}", event.window);
 #endif
 }
 
@@ -157,7 +162,7 @@ static void
 handlePropertyNotify(State& state, XPropertyEvent& event)
 {
 #ifndef NDEBUG
-  std::println(std::clog, "PropertyNotify from {}", event.window);
+  std::println(std::cerr, "PropertyNotify from {}", event.window);
 #endif
 }
 
@@ -169,29 +174,40 @@ handleMotionNotify(State& state, XMotionEvent& event)
 static void
 handleMapRequest(State& state, XMapRequestEvent& event)
 {
+#ifndef NDEBUG
+  std::println(std::cerr, "MapRequest from {}", event.window);
+#endif
+
   if (!state.clients.contains(event.window))
     return;
 
-#ifndef NDEBUG
-  std::println("MapRequest from {}", event.window);
-#endif
-
-  XMapWindow(state.dpy.x11, event.window);
-  XFlush(state.dpy.x11);
+  xcb_map_window(state.dpy.xcb, event.window);
+  xcb_flush(state.dpy.xcb);
 }
 
 static void
 handleMapNotify(State& state, XMapEvent& event)
 {
+#ifndef NDEBUG
+  std::println(std::cerr, "MapNotify from {}", event.window);
+#endif
+
   if (event.override_redirect || !state.clients.contains(event.window))
     return;
 
-#ifndef NDEBUG
-  std::println(std::clog, "MapNotify from {}", event.window);
-#endif
-
   Client& client = state.clients.at(event.window);
   auto _ = client;
+
+  client.pixmap = xcb_generate_id(state.dpy.xcb);
+  if (xcb_request_check(state.dpy.xcb,
+                        xcb_composite_name_window_pixmap_checked(
+                          state.dpy.xcb, event.window, client.pixmap))) {
+    std::println(std::cerr, "xcb_composite_name_window_pixmap failed");
+  }
+
+#ifndef NDEBUG
+  std::println(std::cerr, "client.pixmap = {}", client.pixmap);
+#endif
 }
 
 static void
@@ -202,6 +218,8 @@ handleMappingNotify(State& state, XMappingEvent& event)
 void
 handleEvent(State& state, XEvent* event)
 {
+  std::println(std::cerr, "{}", event->type);
+
   switch (event->type) {
     case ClientMessage:
       handleClientMessage(state, *(XClientMessageEvent*)event);
@@ -280,11 +298,11 @@ handleEvent(State& state, XEvent* event)
       break;
 
     case 0:
-      std::println(std::clog, "Error!");
+      std::println(std::cerr, "Error!");
       break;
 
     default:
-      std::println(std::clog, "unhandled event {}", event->type);
+      std::println(std::cerr, "unhandled event {}", event->type);
       break;
   }
 }

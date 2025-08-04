@@ -1,5 +1,7 @@
 #include "nyla.hpp"
 #include <X11/Xlib.h>
+#include <print>
+#include <xcb/dri3.h>
 
 namespace nyla {
 
@@ -41,36 +43,31 @@ render(State& state)
     // TODO: check why is this failing
     // https://registry.khronos.org/EGL/extensions/KHR/EGL_KHR_image_pixmap.txt
 
-    EGLImage image = eglCreateImage(state.dpy.egl,
-                                    EGL_NO_CONTEXT,
-                                    EGL_NATIVE_PIXMAP_KHR,
-                                    (EGLClientBuffer)(uintptr_t)client.pixmap,
-                                    nullptr);
+    xcb_generic_error_t* err = nullptr;
+    xcb_dri3_buffer_from_pixmap_reply_t* reply =
+      xcb_dri3_buffer_from_pixmap_reply(
+        state.dpy.xcb,
+        xcb_dri3_buffer_from_pixmap(state.dpy.xcb, client.pixmap),
+        &err);
 
-    if (image == EGL_NO_IMAGE) {
-      std::println("{}", eglGetErrorString(eglGetError()));
-    } else {
-      std::println("Success??");
-
-      eglDestroyImage(state.dpy.egl, image);
+    if (!reply) {
+      std::println(std::cerr,
+                   "buffer_from_pixmap failed: X error code {}",
+                   err ? err->error_code : -1);
     }
 
-#if 0
-    xcb_dri3_buffer_from_pixmap(state.xcb.conn, client.pixmap);
+    if (reply) {
 
-    if (auto reply =
-          xcb_dri3_buffer_from_pixmap_reply(state.xcb.conn, , nullptr);
-        reply) {
-
-      int fd = xcb_dri3_buffer_from_pixmap_reply_fds(state.xcb.conn, reply)[0];
+      int fd = xcb_dri3_buffer_from_pixmap_reply_fds(state.dpy.xcb, reply)[0];
 
       EGLImage image = eglCreateImage(
-        state.egl.dpy, state.egl.context, EGL_GL_TEXTURE_2D, &fd, nullptr);
+        state.dpy.egl, state.egl.context, EGL_GL_TEXTURE_2D, &fd, nullptr);
       std::println("{}", long(image));
 
       // free(reply);
     }
-#endif
+
+    std::exit(0);
   }
 
   using namespace std::chrono_literals;
@@ -91,10 +88,10 @@ run(State& state)
   state.flags.set(State::Flag_Running);
 
   while (state.flags.test(State::Flag_Running)) {
-    XEvent event;
     if (XPending(state.dpy.x11)) {
+      XEvent event;
       XNextEvent(state.dpy.x11, &event);
-      handleEvent(state, event);
+      handleEvent(state, &event);
       XFlush(state.dpy.x11);
       continue;
     }

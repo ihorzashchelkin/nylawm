@@ -440,7 +440,7 @@ if (NumMappedClientsInWorkspace > 0) {
         int success;
         glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
         if (success) {
-          std::println(std::clog, "vertex shader successfully compiled");
+          std::println(std::cerr, "vertex shader successfully compiled");
         } else {
           std::println(std::cerr, "vertex shader compilation failed");
 
@@ -461,7 +461,7 @@ if (NumMappedClientsInWorkspace > 0) {
         int success;
         glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
         if (success) {
-          std::println(std::clog, "fragment shader successfully compiled");
+          std::println(std::cerr, "fragment shader successfully compiled");
         } else {
           std::println(std::cerr, "fragment shader compilation failed");
         }
@@ -477,7 +477,7 @@ if (NumMappedClientsInWorkspace > 0) {
         int success;
         glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
         if (success) {
-          std::println(std::clog, "shader program successfully linked");
+          std::println(std::cerr, "shader program successfully linked");
           glDeleteShader(vertexShader);
           glDeleteShader(fragmentShader);
         } else {

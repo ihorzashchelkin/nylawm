@@ -1,26 +1,17 @@
-#include "nyla.hpp"
+#include "nylaunity.hpp"
 
-// clang-format off
-#include "nyla.cpp"
-#include "window_manager.cpp"
-#include "actions.cpp"
-#include "handlers.cpp"
-#include "compositor.cpp"
-#include "shader_sources.cpp"
-// clang-format on
+static const char* const term_command[] = { "ghostty", nullptr };
 
-inline const char* const term_command[] = { "ghostty", nullptr };
-
-#define MOD XCB_MOD_MASK_4
+#define ModMask Mod4Mask
 
 static nyla::Keybind keybinds[]{
   {
-    MOD,
+    ModMask,
     XK_Return,
     [](auto state) { nyla::spawn(state, term_command); },
   },
   {
-    MOD | XCB_MOD_MASK_SHIFT,
+    ModMask | ShiftMask,
     XK_Q,
     [](auto state) { nyla::quit(state); },
   },
@@ -32,20 +23,20 @@ static nyla::Keybind keybinds[]{
 int
 main(int argc, char* argv[])
 {
-#if 0
+#if false
   putenv(const_cast<char*>("DISPLAY=:1"));
 #endif
 
   nyla::State state{};
 
-  if (auto err = nyla::initXcb(state, keybinds); err) {
-    std::println(std::cerr, "initXcb: {}", err);
-    return 1;
+  if (auto err = nyla::initX11(state, keybinds); err) {
+    std::println(std::cerr, "initX11: {}", err);
+    return EXIT_FAILURE;
   }
 
   if (auto err = nyla::initEgl(state); err) {
     std::println(std::cerr, "initEgl: {}", err);
-    return 1;
+    return EXIT_FAILURE;
   }
 
   nyla::run(state);

@@ -2,6 +2,7 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <X11/Xlib.h>
+#include <algorithm>
 #include <print>
 
 namespace nyla {
@@ -63,33 +64,14 @@ GLDebugMessageCallback(GLenum aSource,
 const char*
 initEgl(State& state)
 {
-  // TODO: switch to XLib!!!
-
   EGLint major, minor;
 
-  if (false) {
-    Display* display = XOpenDisplay(nullptr);
-    if (display) {
-      EGLDisplay eglDisplay =
-        eglGetPlatformDisplay(EGL_PLATFORM_X11_KHR, display, nullptr);
-      if (eglDisplay && eglInitialize(eglDisplay, &major, &minor) &&
-          eglBindAPI(EGL_OPENGL_API)) {
-
-        const char* availableExts = eglQueryString(eglDisplay, EGL_EXTENSIONS);
-        std::println("{}", availableExts);
-      }
-
-      XCloseDisplay(display);
-      return nullptr;
-    }
-  }
-
-  state.egl.dpy =
-    eglGetPlatformDisplay(EGL_PLATFORM_XCB_EXT, state.xcb.conn, nullptr);
-  if (!state.egl.dpy)
+  state.dpy.egl =
+    eglGetPlatformDisplay(EGL_PLATFORM_X11_KHR, state.dpy.x11, nullptr);
+  if (!state.dpy.egl)
     return "could not create egl display";
 
-  if (!eglInitialize(state.egl.dpy, &major, &minor))
+  if (!eglInitialize(state.dpy.egl, &major, &minor))
     return "could not initialize egl display";
 
   if (major < 1 || (major == 1 && minor < 5))
@@ -98,14 +80,17 @@ initEgl(State& state)
   if (!eglBindAPI(EGL_OPENGL_API))
     return "could not select opengl for egl";
 
-  const char* availableExts = eglQueryString(state.egl.dpy, EGL_EXTENSIONS);
+  std::string availableExts = eglQueryString(state.dpy.egl, EGL_EXTENSIONS);
+#if 0
+  std::string availableExts = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
+  std::replace(availableExts.begin(), availableExts.end(), ' ', '\n');
   std::println("{}", availableExts);
+#endif
 
-  for (auto ext : { "EGL_EXT_platform_xcb",
-                    "EGL_KHR_no_config_context",
+  for (auto ext : { "EGL_KHR_no_config_context",
                     "EGL_KHR_surfaceless_context",
                     "EGL_KHR_image_pixmap" }) {
-    if (!strstr(availableExts, ext))
+    if (!availableExts.contains(ext))
       return ext;
   }
 
@@ -120,14 +105,14 @@ initEgl(State& state)
       // clang-format on
     };
     state.egl.context =
-      eglCreateContext(state.egl.dpy, EGL_NO_CONFIG_KHR, EGL_NO_CONTEXT, attr);
+      eglCreateContext(state.dpy.egl, EGL_NO_CONFIG_KHR, EGL_NO_CONTEXT, attr);
   }
 
   if (!state.egl.context)
     return "could not create egl context, is opengl 4.5 supported?";
 
   if (!eglMakeCurrent(
-        state.egl.dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, state.egl.context))
+        state.dpy.egl, EGL_NO_SURFACE, EGL_NO_SURFACE, state.egl.context))
     return "eglMakeCurrent failed";
 
   // load OpenGL functions
@@ -167,7 +152,7 @@ initEgl(State& state)
     EGLConfig configs[64];
     int numConfigs;
     if (!eglChooseConfig(
-          state.egl.dpy, attr, configs, std::size(configs), &numConfigs)) {
+          state.dpy.egl, attr, configs, std::size(configs), &numConfigs)) {
       return "could not choose egl config";
     }
 
@@ -185,7 +170,7 @@ initEgl(State& state)
       };
 
       state.egl.surface = eglCreatePlatformWindowSurface(
-        state.egl.dpy, config, &state.xcb.window, attr);
+        state.dpy.egl, config, &state.window, attr);
       if (state.egl.surface != EGL_NO_SURFACE)
         break;
     }

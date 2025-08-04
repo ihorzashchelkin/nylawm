@@ -1,6 +1,4 @@
 #include "nyla.hpp"
-#include <X11/X.h>
-#include <X11/Xlib.h>
 
 namespace nyla {
 
@@ -55,6 +53,7 @@ initX11(State& state, std::span<const Keybind> keybinds)
   }
 
   XMapWindow(state.dpy.x11, state.window);
+  XFlush(state.dpy.x11);
 
   { // TODO: improve this
     for (auto& keybind : keybinds) {
@@ -67,6 +66,7 @@ initX11(State& state, std::span<const Keybind> keybinds)
 
   grabKeys(state);
 
+  state.dpy.xcb = XGetXCBConnection(state.dpy.x11);
   return nullptr;
 }
 

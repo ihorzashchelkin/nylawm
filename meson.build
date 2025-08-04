@@ -11,6 +11,11 @@ executable(
     dependency('gl'),
     dependency('egl'),
     dependency('X11'),
+    dependency('x11-xcb'),
+    dependency('xcb'),
+    dependency('xcb-composite'),
+    dependency('xcb-dri3'),
+    dependency('xcomposite'),
   ]
 )
 
