@@ -10,6 +10,8 @@ executable(
   dependencies: [
     dependency('xcb'),
     dependency('xcb-util'),
+    dependency('xcb-keysyms'),
+    dependency('X11'),
   ]
 )
 

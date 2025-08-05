@@ -1,5 +1,7 @@
 #include "nyla.hpp"
-#include "src/nylaunity.hpp"
+#include <print>
+#include <xcb/xcb.h>
+#include <xcb/xcb_keysyms.h>
 #include <xcb/xproto.h>
 
 namespace nyla {
@@ -28,48 +30,51 @@ strXcbEventType(u8 type)
   return "unknown";
 }
 
-void
-handleMapRequest(WindowManager& wm, xcb_map_request_event_t& e)
+/*
+ * Consider switching to C because I don't see how C++ helps here...
+ */
+
+static void
+handleMapRequest(xcb_map_request_event_t& e, xcb_connection_t* conn)
 {
-  xcb_map_window(wm.conn, e.window);
+  xcb_map_window(conn, e.window);
 }
 
-void
-handleMapNotify(WindowManager& wm, xcb_map_notify_event_t& e)
+static void
+handleMapNotify(xcb_map_notify_event_t& e,
+                std::unordered_map<xcb_window_t, Client>& clients)
 {
   if (e.override_redirect)
     return;
 
-  wm.clients[e.window] = {};
+  clients[e.window] = {};
   LOG(std::format("added client {}", e.window));
 }
 
-void
-handleUnmapNotify(WindowManager& wm, xcb_unmap_notify_event_t& e)
+static void
+handleUnmapNotify(xcb_unmap_notify_event_t& e,
+                  std::unordered_map<xcb_window_t, Client>& clients)
 {
-  wm.clients.erase(e.window);
+  clients.erase(e.window);
 }
 
-void
-handleKeyPress(WindowManager& wm, xcb_key_press_event_t& e)
+static void
+handleKeyPress(xcb_key_press_event_t& e)
 {
+  std::println("keypress! {}", e.detail);
 }
 
 void
 run()
 {
+  std::unordered_map<xcb_window_t, Client> clients;
+  std::array<xcb_window_t, 4> tileAssignments;
+
   int iscreen;
-
-  WindowManager wm{};
-  auto& conn = wm.conn;
-  auto& screen = wm.screen;
-  auto& clients = wm.clients;
-  auto& tileAssignments = wm.tileAssignments;
-
-  conn = xcb_connect(nullptr, &iscreen);
+  xcb_connection_t* conn = xcb_connect(nullptr, &iscreen);
   assert(conn && "could not connect to X server");
 
-  screen = xcb_aux_get_screen(conn, iscreen);
+  xcb_screen_t* screen = xcb_aux_get_screen(conn, iscreen);
   assert(screen && "could not get X screen");
 
   bool ok = !XCB_CHECKED(xcb_change_window_attributes,
@@ -78,6 +83,33 @@ run()
                          (u32[]){ XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
                                   XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY });
   assert(ok && "could not change root window attributes");
+
+  {
+    xcb_key_symbols_t* syms = xcb_key_symbols_alloc(conn);
+    xcb_keycode_t* keycodes;
+
+    keycodes = xcb_key_symbols_get_keycode(syms, XK_a);
+    static xcb_keycode_t aKeycode = *keycodes;
+    free(keycodes);
+
+    xcb_key_symbols_get_keycode(syms, XK_s);
+
+    xcb_key_symbols_get_keycode(syms, XK_d);
+
+    xcb_key_symbols_get_keycode(syms, XK_f);
+
+    xcb_grab_key(conn,
+                 0,
+                 screen->root,
+                 XCB_MOD_MASK_4,
+                 *xcb_key_symbols_get_keycode(syms, XK_k),
+                 XCB_GRAB_MODE_ASYNC,
+                 XCB_GRAB_MODE_ASYNC);
+
+    xcb_flush(conn);
+
+    xcb_key_symbols_free(syms);
+  }
 
   while (true) {
     while (true) {
@@ -92,16 +124,16 @@ run()
 
       switch (eventType) {
         case XCB_MAP_REQUEST:
-          handleMapRequest(wm, *(xcb_map_request_event_t*)event);
+          handleMapRequest(*(xcb_map_request_event_t*)event, conn);
           break;
         case XCB_MAP_NOTIFY:
-          handleMapNotify(wm, *(xcb_map_notify_event_t*)event);
+          handleMapNotify(*(xcb_map_notify_event_t*)event, clients);
           break;
         case XCB_UNMAP_NOTIFY:
-          handleUnmapNotify(wm, *(xcb_unmap_notify_event_t*)event);
+          handleUnmapNotify(*(xcb_unmap_notify_event_t*)event, clients);
           break;
         case XCB_KEY_PRESS:
-          handleKeyPress(wm, *(xcb_key_press_event_t*)event);
+          handleKeyPress(*(xcb_key_press_event_t*)event);
           break;
       }
     }

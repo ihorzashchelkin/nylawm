@@ -12,7 +12,10 @@
 
 #include <xcb/xcb.h>
 #include <xcb/xcb_aux.h>
+#include <xcb/xcb_keysyms.h>
 #include <xcb/xproto.h>
+
+#include <X11/keysym.h>
 
 namespace nyla {
 
@@ -38,14 +41,6 @@ typedef const char* cstr;
 struct Client
 {
   u8 itile;
-};
-
-struct WindowManager
-{
-  xcb_connection_t* conn;
-  xcb_screen_t* screen;
-  std::unordered_map<xcb_window_t, Client> clients;
-  std::array<xcb_window_t, 4> tileAssignments;
 };
 
 void
