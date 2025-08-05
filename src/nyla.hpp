@@ -1,103 +1,54 @@
 #pragma once
 
-#include <bitset>
+#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
-#include <ctime>
-#include <format>
+#include <cstdlib>
 #include <iostream>
-#include <iterator>
 #include <print>
-#include <span>
-#include <thread>
 #include <unordered_map>
 #include <vector>
 
-#include <fcntl.h>
-#include <sys/wait.h>
-#include <unistd.h>
-
-#include <X11/X.h>
-#include <X11/Xlib-xcb.h>
-#include <X11/Xlib.h>
-#include <X11/keysym.h>
-#include <xcb/composite.h>
-#include <xcb/dri3.h>
 #include <xcb/xcb.h>
-
-#include <EGL/egl.h>
-#include <EGL/eglext.h>
-#include <EGL/eglplatform.h>
-#include <GL/glcorearb.h>
+#include <xcb/xcb_aux.h>
 #include <xcb/xproto.h>
 
 namespace nyla {
 
-struct State;
+typedef int8_t i8;
+typedef int16_t i16;
+typedef int32_t i32;
+typedef int64_t i64;
 
-struct Keybind
-{
-  unsigned int mod;
-  int key;
-  void (*action)(State&);
-};
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
+
+typedef const char* cstr;
+
+#define nil nullptr;
+
+#define LOG(arg) std::println(std::cerr, "{}:{} {}", __FILE__, __LINE__, arg)
+
+#define XCB_CHECKED(NAME, ...)                                                 \
+  xcb_request_check(conn, NAME##_checked(conn, __VA_ARGS__))
 
 struct Client
 {
-  xcb_pixmap_t pixmap;
-  int x;
-  int y;
-  int width;
-  int height;
-  int borderWidth;
+  u8 itile;
 };
 
-struct State
+struct WindowManager
 {
-  enum
-  {
-    Flag_Running,
-    Flag_Count
-  };
-  std::bitset<Flag_Count> flags;
-
-  struct
-  {
-    Display* x11;
-    EGLDisplay egl;
-    xcb_connection_t* xcb;
-  } dpy;
-
-  Window window;
-
-  struct
-  {
-    EGLContext context;
-    EGLSurface surface;
-  } egl;
-
-  std::vector<Keybind> keybinds;
-  std::unordered_map<Window, Client> clients;
+  xcb_connection_t* conn;
+  xcb_screen_t* screen;
+  std::unordered_map<xcb_window_t, Client> clients;
+  std::array<xcb_window_t, 4> tileAssignments;
 };
 
-const char*
-initX11(State& state, std::span<const Keybind> keybinds);
-
-const char*
-initEgl(State& state);
-
 void
-run(State& state);
-
-void
-spawn(State& state, const char* const command[]);
-
-void
-quit(State& state);
-
-void
-handleEvent(State& state, XEvent* event);
+run();
 
 }

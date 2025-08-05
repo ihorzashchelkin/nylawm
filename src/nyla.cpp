@@ -1,123 +1,126 @@
 #include "nyla.hpp"
-#include <X11/Xlib.h>
-#include <iostream>
-#include <print>
-#include <xcb/composite.h>
-#include <xcb/dri3.h>
-#include <xcb/xcb.h>
+#include "src/nylaunity.hpp"
 #include <xcb/xproto.h>
 
 namespace nyla {
 
-const char*
-eglGetErrorString(EGLint error)
+cstr
+strXcbEventType(u8 type)
 {
-#define CASE_STR(value)                                                        \
-  case value:                                                                  \
-    return #value;
-  switch (error) {
-    CASE_STR(EGL_SUCCESS)
-    CASE_STR(EGL_NOT_INITIALIZED)
-    CASE_STR(EGL_BAD_ACCESS)
-    CASE_STR(EGL_BAD_ALLOC)
-    CASE_STR(EGL_BAD_ATTRIBUTE)
-    CASE_STR(EGL_BAD_CONTEXT)
-    CASE_STR(EGL_BAD_CONFIG)
-    CASE_STR(EGL_BAD_CURRENT_SURFACE)
-    CASE_STR(EGL_BAD_DISPLAY)
-    CASE_STR(EGL_BAD_SURFACE)
-    CASE_STR(EGL_BAD_MATCH)
-    CASE_STR(EGL_BAD_PARAMETER)
-    CASE_STR(EGL_BAD_NATIVE_PIXMAP)
-    CASE_STR(EGL_BAD_NATIVE_WINDOW)
-    CASE_STR(EGL_CONTEXT_LOST)
-    default:
-      return "Unknown";
-  }
-#undef CASE_STR
-}
+  switch (type) {
 
-static void
-render(State& state)
-{
-  for (auto [window, client] : state.clients) {
-    if (!client.pixmap)
-      continue;
+#define CASE(X)                                                                \
+  case X:                                                                      \
+    return #X;
 
-    std::println(std::cerr,
-                 "map state = {} {}",
-                 xcb_get_window_attributes_reply(
-                   state.dpy.xcb,
-                   xcb_get_window_attributes(state.dpy.xcb, window),
-                   nullptr)
-                   ->map_state,
-                 (int)XCB_MAP_STATE_VIEWABLE);
+    CASE(XCB_CREATE_NOTIFY)
+    CASE(XCB_DESTROY_NOTIFY)
+    CASE(XCB_CONFIGURE_REQUEST)
+    CASE(XCB_CONFIGURE_NOTIFY)
+    CASE(XCB_MAP_REQUEST)
+    CASE(XCB_MAP_NOTIFY)
+    CASE(XCB_CLIENT_MESSAGE)
 
-    client.pixmap = xcb_generate_id(state.dpy.xcb);
-    if (xcb_request_check(state.dpy.xcb,
-                          xcb_composite_name_window_pixmap_checked(
-                            state.dpy.xcb, window, client.pixmap))) {
-      std::println(std::cerr,
-                   "xcb_composite_name_window_pixmap_checked FAILED");
-      exit(1);
-    }
-
-    // TODO: check why is this failing
-    // https://registry.khronos.org/EGL/extensions/KHR/EGL_KHR_image_pixmap.txt
-
-    xcb_generic_error_t* err = nullptr;
-    xcb_dri3_buffer_from_pixmap_reply_t* reply =
-      xcb_dri3_buffer_from_pixmap_reply(
-        state.dpy.xcb,
-        xcb_dri3_buffer_from_pixmap(state.dpy.xcb, client.pixmap),
-        &err);
-
-    if (!reply) {
-      std::println(std::cerr,
-                   "buffer_from_pixmap failed: X error code {}",
-                   err ? err->error_code : -1);
-      std::exit(1);
-    }
-
-    if (reply) {
-      int fd = xcb_dri3_buffer_from_pixmap_reply_fds(state.dpy.xcb, reply)[0];
-
-      EGLImage image = eglCreateImage(
-        state.dpy.egl, state.egl.context, EGL_GL_TEXTURE_2D, &fd, nullptr);
-      std::println("{}", long(image));
-
-      // free(reply);
-    }
+#undef CASE
   }
 
-  using namespace std::chrono_literals;
-  std::this_thread::sleep_for(30ms);
+  LOG(type);
+  return "unknown";
 }
 
 void
-run(State& state)
+handleMapRequest(WindowManager& wm, xcb_map_request_event_t& e)
 {
-  struct sigaction sa;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_handler = SIG_IGN;
-  sigaction(SIGCHLD, &sa, nullptr);
+  xcb_map_window(wm.conn, e.window);
+}
 
-  while (waitpid(-1, nullptr, WNOHANG) > 0)
-    ;
+void
+handleMapNotify(WindowManager& wm, xcb_map_notify_event_t& e)
+{
+  if (e.override_redirect)
+    return;
 
-  state.flags.set(State::Flag_Running);
+  wm.clients[e.window] = {};
+  LOG(std::format("added client {}", e.window));
+}
 
-  while (state.flags.test(State::Flag_Running)) {
-    if (XPending(state.dpy.x11)) {
-      XEvent event;
-      XNextEvent(state.dpy.x11, &event);
-      handleEvent(state, &event);
-      XFlush(state.dpy.x11);
-      continue;
+void
+handleUnmapNotify(WindowManager& wm, xcb_unmap_notify_event_t& e)
+{
+  wm.clients.erase(e.window);
+}
+
+void
+handleKeyPress(WindowManager& wm, xcb_key_press_event_t& e)
+{
+}
+
+void
+run()
+{
+  int iscreen;
+
+  WindowManager wm{};
+  auto& conn = wm.conn;
+  auto& screen = wm.screen;
+  auto& clients = wm.clients;
+  auto& tileAssignments = wm.tileAssignments;
+
+  conn = xcb_connect(nullptr, &iscreen);
+  assert(conn && "could not connect to X server");
+
+  screen = xcb_aux_get_screen(conn, iscreen);
+  assert(screen && "could not get X screen");
+
+  bool ok = !XCB_CHECKED(xcb_change_window_attributes,
+                         screen->root,
+                         XCB_CW_EVENT_MASK,
+                         (u32[]){ XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
+                                  XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY });
+  assert(ok && "could not change root window attributes");
+
+  while (true) {
+    while (true) {
+      xcb_generic_event_t* event = xcb_poll_for_event(conn);
+      if (!event)
+        break;
+
+      u8 eventType = event->response_type & ~0x80;
+      if (eventType != XCB_MOTION_NOTIFY) {
+        LOG(std::format("received event {}", strXcbEventType(eventType)));
+      }
+
+      switch (eventType) {
+        case XCB_MAP_REQUEST:
+          handleMapRequest(wm, *(xcb_map_request_event_t*)event);
+          break;
+        case XCB_MAP_NOTIFY:
+          handleMapNotify(wm, *(xcb_map_notify_event_t*)event);
+          break;
+        case XCB_UNMAP_NOTIFY:
+          handleUnmapNotify(wm, *(xcb_unmap_notify_event_t*)event);
+          break;
+        case XCB_KEY_PRESS:
+          handleKeyPress(wm, *(xcb_key_press_event_t*)event);
+          break;
+      }
     }
 
-    render(state);
+    // do this via manual tile assignemnt?
+#if 0
+        xcb_configure_window(
+          wm.conn,
+          window,
+          XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH |
+            XCB_CONFIG_WINDOW_HEIGHT,
+          (u32[]){
+            0, 0, wm.screen->width_in_pixels, wm.screen->height_in_pixels });
+#endif
+
+    xcb_flush(conn);
   }
+
+  xcb_disconnect(conn);
 }
 
 }
