@@ -15,7 +15,6 @@ executable(
     dependency('xcb'),
     dependency('xcb-composite'),
     dependency('xcb-dri3'),
-    dependency('xcomposite'),
   ]
 )
 

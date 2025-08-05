@@ -77,10 +77,6 @@ handleCreateNotify(State& state, XCreateWindowEvent& event)
   if (event.override_redirect)
     return;
 
-  XCompositeRedirectWindow(
-    state.dpy.x11, event.window, CompositeRedirectManual);
-  XFlush(state.dpy.x11);
-
   state.clients.emplace(event.window,
                         Client{
                           .x = event.x,
@@ -181,8 +177,11 @@ handleMapRequest(State& state, XMapRequestEvent& event)
   if (!state.clients.contains(event.window))
     return;
 
-  xcb_map_window(state.dpy.xcb, event.window);
-  xcb_flush(state.dpy.xcb);
+  if (xcb_request_check(state.dpy.xcb,
+                        xcb_map_window_checked(state.dpy.xcb, event.window))) {
+    std::println(std::cerr, "xcb_map_window_checked FAILED");
+    exit(1);
+  }
 }
 
 static void
@@ -197,6 +196,14 @@ handleMapNotify(State& state, XMapEvent& event)
 
   Client& client = state.clients.at(event.window);
   auto _ = client;
+
+  if (xcb_request_check(
+        state.dpy.xcb,
+        xcb_composite_redirect_window_checked(
+          state.dpy.xcb, event.window, XCB_COMPOSITE_REDIRECT_MANUAL))) {
+    std::println(std::cerr, "xcb_composite_redirect_window_checked FAILED 1");
+    exit(1);
+  }
 
   client.pixmap = xcb_generate_id(state.dpy.xcb);
   if (xcb_request_check(state.dpy.xcb,

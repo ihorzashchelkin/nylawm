@@ -22,7 +22,6 @@
 #include <X11/X.h>
 #include <X11/Xlib-xcb.h>
 #include <X11/Xlib.h>
-#include <X11/extensions/Xcomposite.h>
 #include <X11/keysym.h>
 #include <xcb/composite.h>
 #include <xcb/dri3.h>

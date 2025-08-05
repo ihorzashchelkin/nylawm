@@ -5,6 +5,7 @@
 #include <xcb/composite.h>
 #include <xcb/dri3.h>
 #include <xcb/xcb.h>
+#include <xcb/xproto.h>
 
 namespace nyla {
 
@@ -42,6 +43,15 @@ render(State& state)
   for (auto [window, client] : state.clients) {
     if (!client.pixmap)
       continue;
+
+    std::println(std::cerr,
+                 "map state = {} {}",
+                 xcb_get_window_attributes_reply(
+                   state.dpy.xcb,
+                   xcb_get_window_attributes(state.dpy.xcb, window),
+                   nullptr)
+                   ->map_state,
+                 (int)XCB_MAP_STATE_VIEWABLE);
 
     client.pixmap = xcb_generate_id(state.dpy.xcb);
     if (xcb_request_check(state.dpy.xcb,
