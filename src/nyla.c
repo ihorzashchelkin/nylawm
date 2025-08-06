@@ -1,19 +1,50 @@
 #include "nyla.h"
 
-#define X(key) static xcb_keycode_t key##Keycode;
+static const char* termCommand[] = {"ghostty", NULL};
+
+static xcb_connection_t* conn;
+static int iscreen;
+static xcb_screen_t* screen;
+static NylaClient clients[64];
+
+static xcb_keycode_t activeChordKey;
+
+#define X(key, grabbed) static xcb_keycode_t key##Keycode;
 NYLA_KEYS(X)
 #undef X
 
-const char*
-strXcbEventType(u8 type)
+void
+spawn(const char* const command[])
 {
-  switch (type) {
-#define X(a, b)                                                                                                                                                                                        \
-  case a: return #a;
-    NYLA_XEVENTS(X)
-#undef X
+  switch (fork()) {
+    case 0: {
+      close(xcb_get_file_descriptor(conn));
+
+      {
+        int devNull = open("/dev/null", O_RDONLY);
+        dup2(devNull, STDIN_FILENO);
+        close(devNull);
+      }
+
+      {
+        int devNull = open("/dev/null", O_WRONLY);
+        dup2(devNull, STDOUT_FILENO);
+        dup2(devNull, STDERR_FILENO);
+        close(devNull);
+      }
+
+      setsid();
+
+      struct sigaction sa;
+      sigemptyset(&sa.sa_mask);
+      sa.sa_flags = 0;
+      sa.sa_handler = SIG_DFL;
+      sigaction(SIGCHLD, &sa, NULL);
+
+      execvp(command[0], (char**)command);
+      exit(EXIT_FAILURE);
+    }
   }
-  return "unknown";
 }
 
 NYLA_XEVENT_HANDLER(map_request)
@@ -47,27 +78,63 @@ NYLA_XEVENT_HANDLER(unmap_notify)
 
 NYLA_XEVENT_HANDLER(key_press)
 {
-  NYLA_DLOGd(e->detail);
+  if (!activeChordKey) {
+    activeChordKey = e->detail;
+  } else {
+    if (activeChordKey == dKeycode) {
+      if (e->detail == fKeycode)
+        spawn(termCommand);
+    } else if (activeChordKey == sKeycode) {
+      if (e->detail == qKeycode) {
+        exit(EXIT_SUCCESS);
+      }
+    }
+
+    activeChordKey = 0;
+  }
+}
+
+NYLA_XEVENT_HANDLER(key_release)
+{
+  if (e->detail == activeChordKey) 
+    activeChordKey = 0;
 }
 
 NYLA_XEVENT_HANDLER(create_notify) {}
 
 NYLA_XEVENT_HANDLER(destroy_notify) {}
 
-NYLA_XEVENT_HANDLER(configure_request) {}
+NYLA_XEVENT_HANDLER(configure_request)
+{
+  static int i;
+  ++i;
+  xcb_configure_window(
+    conn, e->window, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, (u32[]){0, 0, screen->width_in_pixels / i, screen->height_in_pixels / i});
+}
 
 NYLA_XEVENT_HANDLER(configure_notify) {}
 
 NYLA_XEVENT_HANDLER(client_message) {}
 
+const char*
+strXcbEventType(u8 type)
+{
+  switch (type) {
+#define X(a, b)                                                                                                                                                                                        \
+  case a: return #a;
+    NYLA_XEVENTS(X)
+#undef X
+  }
+  return "unknown";
+}
+
 int
 main()
 {
-  int iscreen;
-  xcb_connection_t* conn = xcb_connect(NULL, &iscreen);
+  conn = xcb_connect(NULL, &iscreen);
   assert(conn && "could not connect to X server");
 
-  xcb_screen_t* screen = xcb_aux_get_screen(conn, iscreen);
+  screen = xcb_aux_get_screen(conn, iscreen);
   assert(screen && "could not get X screen");
 
   bool ok = !NYLA_XCB_CHECKED(xcb_change_window_attributes, screen->root, XCB_CW_EVENT_MASK, (u32[]){XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY});
@@ -76,12 +143,13 @@ main()
   {
     xcb_key_symbols_t* syms = xcb_key_symbols_alloc(conn);
 
-#define X(key)                                                                                                                                                                                         \
+#define X(key, grabbed)                                                                                                                                                                                \
   do {                                                                                                                                                                                                 \
     xcb_keycode_t* keycodes = xcb_key_symbols_get_keycode(syms, XK_##key);                                                                                                                             \
     key##Keycode = *keycodes;                                                                                                                                                                          \
     free(keycodes);                                                                                                                                                                                    \
-    xcb_grab_key(conn, 0, screen->root, XCB_MOD_MASK_4, key##Keycode, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);                                                                                       \
+    if (grabbed)                                                                                                                                                                                       \
+      xcb_grab_key(conn, 0, screen->root, XCB_MOD_MASK_4, key##Keycode, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);                                                                                     \
   } while (false);
     NYLA_KEYS(X)
 #undef X
@@ -89,8 +157,6 @@ main()
     xcb_flush(conn);
     xcb_key_symbols_free(syms);
   }
-
-  NylaClient clients[64] = {0};
 
   while (true) {
     while (true) {
@@ -105,23 +171,11 @@ main()
 
       switch (type) {
 #define X(event, type)                                                                                                                                                                                 \
-  case event: nyla_handle_##type((void*)e, conn, clients, NYLA_END(clients)); break;
+  case event: nyla_handle_##type((void*)e); break;
         NYLA_XEVENTS(X)
 #undef X
-        NYLA_DEFAULT_UNREACHABLE
       }
     }
-
-    // do this via manual tile assignemnt?
-#if 0
-        xcb_configure_window(
-          wm.conn,
-          window,
-          XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH |
-            XCB_CONFIG_WINDOW_HEIGHT,
-          (u32[]){
-            0, 0, wm.screen->width_in_pixels, wm.screen->height_in_pixels });
-#endif
 
     xcb_flush(conn);
   }

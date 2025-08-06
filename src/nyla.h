@@ -1,12 +1,15 @@
 #pragma once
 
 #include <assert.h>
+#include <signal.h>
+#include <fcntl.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <xcb/xcb.h>
 #include <xcb/xcb_aux.h>
@@ -69,12 +72,9 @@ typedef struct
 } NylaClient;
 
 #define NYLA_FOREACH_CLIENTS(client)                                           \
-  for (NylaClient* client = clients; clients != clientsEnd; ++clients)
+  for (NylaClient* client = clients; client != NYLA_END(clients); ++client)
 #define NYLA_XEVENT_HANDLER(type)                                              \
-  static void nyla_handle_##type(xcb_##type##_event_t* e,                      \
-                                 xcb_connection_t* conn,                       \
-                                 NylaClient* clients,                          \
-                                 NylaClient* clientsEnd)
+  static void nyla_handle_##type(xcb_##type##_event_t* e)
 #define NYLA_XEVENTS(X)                                                        \
   X(XCB_CREATE_NOTIFY, create_notify)                                          \
   X(XCB_DESTROY_NOTIFY, destroy_notify)                                        \
@@ -83,14 +83,19 @@ typedef struct
   X(XCB_MAP_REQUEST, map_request)                                              \
   X(XCB_MAP_NOTIFY, map_notify)                                                \
   X(XCB_UNMAP_NOTIFY, unmap_notify)                                            \
+  X(XCB_CLIENT_MESSAGE, client_message)                                        \
   X(XCB_KEY_PRESS, key_press)                                                  \
-  X(XCB_CLIENT_MESSAGE, client_message)
+  X(XCB_KEY_RELEASE, key_release)
+
+// Eine geile Sache über den X11 passive key grab: jederzeit eine passiv
+// gegrabbte Taste gedrückt ist, ist die ganze Tastatur aktiv gegrabbt.
+// 1 bedeutet hier, dass die Taste gegrabbt wird
 
 // clang-format off
 #define NYLA_KEYS(X)                                                           \
-  X(q) X(w) X(e) X(r) X(t)                                                     \
-  X(a) X(s) X(d) X(f) X(g)                                                     \
-  X(z) X(x) X(c) X(v) X(b)
+  X(q, 0) X(w, 0) X(e, 0) X(r, 0) X(t, 0)                                      \
+  X(a, 0) X(s, 1) X(d, 1) X(f, 0) X(g, 0)                                      \
+  X(z, 0) X(x, 0) X(c, 0) X(v, 0) X(b, 0)
 // clang-format on
 
 void
