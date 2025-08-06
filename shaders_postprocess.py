@@ -24,9 +24,9 @@ def main():
         impl += '";\n\n'
         header += ';\n'
 
-    with open("src/shader_sources.hpp", "w") as outfile:
+    with open("src/shader_sources.h", "w") as outfile:
         outfile.write(header)
-    with open("src/shader_sources.cpp", "w") as outfile:
+    with open("src/shader_sources.c", "w") as outfile:
         outfile.write(impl)
 
 

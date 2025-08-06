@@ -1,12 +1,11 @@
 project(
   'nylawm',
-  'cpp',
-  default_options : ['cpp_std=c++26']
+  'c',
 )
 
 executable(
   'nyla',
-  ['src/main.cpp'],
+  ['src/nyla.c'],
   dependencies: [
     dependency('xcb'),
     dependency('xcb-util'),
