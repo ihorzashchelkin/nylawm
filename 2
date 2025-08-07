@@ -234,14 +234,12 @@ NYLA_XEVENT_HANDLER(mapping_notify)
 
 NYLA_XEVENT_HANDLER(focus_in)
 {
-    // TODO: is this good?
     if (activeClient)
         nyla_focus_window(conn, activeClient->window);
 }
 
 NYLA_XEVENT_HANDLER(focus_out)
 {
-    // TODO: is this good?
     if (activeClient)
         nyla_focus_window(conn, activeClient->window);
 }
@@ -254,9 +252,9 @@ main(int argc, const char* argv[])
     {
         logFile = stderr;
 
-        int logFileFd = open("/home/izashchelkin/nylalog", O_APPEND | O_TRUNC | O_WRONLY | O_CREAT);
-        NYLA_ASSERT(logFileFd, "could not open log file");
-        FILE* tmp = fdopen(logFileFd, "a");
+        open("/home/izashchelkin/nylalog", O_APPEND | O_TRUNC | O_WRONLY);
+
+        FILE* tmp = fopen(, "a+");
         NYLA_ASSERT(tmp, "could not open log file");
         logFile = tmp;
     }

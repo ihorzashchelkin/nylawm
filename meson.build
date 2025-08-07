@@ -8,9 +8,9 @@ executable(
   ['src/nyla.c'],
   dependencies: [
     dependency('xcb'),
+    dependency('xcb-xkb'),
     dependency('xcb-util'),
     dependency('xcb-keysyms'),
-    dependency('X11'),
   ]
 )
 

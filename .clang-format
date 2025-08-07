@@ -1,9 +1,9 @@
 ---
 Language:        C
-Cpp11BracedListStyle: true      # Ensures uniform brace handling (even in C)
-SpacesInContainerLiterals: false # No spaces in braced lists (applies with above)
-SpaceBeforeCpp11BracedList: false # Prevents space before `{` after function/keywords
-BreakBeforeBraces: Mozilla       # Keeps braces tight like `int x = {1, 2};`
+Cpp11BracedListStyle: true      
+SpacesInContainerLiterals: false 
+SpaceBeforeCpp11BracedList: false 
+BreakBeforeBraces: Custom
 
 AccessModifierOffset: -2
 AlignAfterOpenBracket: Align
@@ -66,18 +66,17 @@ BitFieldColonSpacing: Both
 BraceWrapping:
   AfterCaseLabel:  false
   AfterClass:      true
-  AfterControlStatement: Never
+  AfterControlStatement: true
   AfterEnum:       true
   AfterExternBlock: true
   AfterFunction:   true
-  AfterNamespace:  false
-  AfterObjCDeclaration: false
+  AfterNamespace:  true
   AfterStruct:     true
   AfterUnion:      true
-  BeforeCatch:     false
-  BeforeElse:      false
+  BeforeCatch:     true
+  BeforeElse:      true
   BeforeLambdaBody: false
-  BeforeWhile:     false
+  BeforeWhile:     true
   IndentBraces:    false
   SplitEmptyFunction: true
   SplitEmptyRecord: false
@@ -112,7 +111,10 @@ ForEachMacros:
   - foreach
   - Q_FOREACH
   - BOOST_FOREACH
-  - NYLA_FOREACH_CLIENTS
+  - NYLA_FOREACH
+  - NYLA_FOREACH_IF
+  - NYLA_CLIENTS_FOREACH
+  - NYLA_CLIENTS_FOREACH_IF
 IfMacros:
   - KJ_IF_MAYBE
 IncludeBlocks:   Preserve
@@ -139,7 +141,7 @@ IndentExternBlock: AfterExternBlock
 IndentGotoLabels: true
 IndentPPDirectives: None
 IndentRequiresClause: true
-IndentWidth:     2
+IndentWidth:     4
 IndentWrappedFunctionNames: false
 InsertBraces:    false
 InsertNewlineAtEOF: false
