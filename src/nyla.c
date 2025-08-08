@@ -1,4 +1,3 @@
-#include <X11/X.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -9,6 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <X11/X.h>
 #include <X11/Xlib-xcb.h>
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
@@ -69,33 +69,25 @@ typedef uint64_t u64;
 #define NYLA_DEFAULT_UNREACHABLE                                                                                       \
     default: NYLA_UNREACHABLE
 
-typedef struct
+enum
 {
-    union
-    {
-        u64 raw;
-        struct
-        {
-            i16 x;
-            i16 y;
-            u16 width;
-            u16 height;
-        };
-    };
-} NylaClientGeom;
+    NylaClientFlagMapped = 1
+};
 
 typedef struct
 {
     xcb_window_t win;
     u32 flags;
-    NylaClientGeom oldGeom;
-    NylaClientGeom curGeom;
 } NylaClient;
 
 #define NYLA_FOREACH(elem, start, end) for (__typeof__(*(start))* elem = (start); elem != (end); ++elem)
-
 #define NYLA_FOREACH_IF(elem, start, end, condition)                                                                   \
     NYLA_FOREACH (elem, start, end)                                                                                    \
+        if (condition)
+
+#define NYLA_FOREACH_ARRAY(elem, arr) NYLA_FOREACH (elem, arr, NYLA_ARRAY_END(arr))
+#define NYLA_FOREACH_ARRAY_IF(elem, arr, condition)                                                                    \
+    NYLA_FOREACH_ARRAY (elem, arr)                                                                                     \
         if (condition)
 
 #define NYLA_ATOMS(X)                                                                                                  \
@@ -147,7 +139,8 @@ static xcb_connection_t* conn;
 static xcb_screen_t* screen;
 
 static NylaClient clients[64];
-static NylaClient* activeClient;
+static u8 activeCol = 0;
+static NylaClient* activeClients[2];
 static xcb_keycode_t chordKey;
 static xcb_window_t overlayWindow;
 
@@ -246,11 +239,62 @@ nyla_map_keyboard()
     xcb_key_symbols_free(syms);
 }
 
-NYLA_XEVENT_HANDLER(map_request) {}
+void
+nyla_arrange_active_clients()
+{
+    int i = 0;
+    NYLA_FOREACH_ARRAY (client, activeClients)
+    {
+        if (client)
+        {
+            xcb_configure_window(conn,
+                                 (*client)->win,
+                                 (XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH |
+                                  XCB_CONFIG_WINDOW_HEIGHT | XCB_CONFIG_WINDOW_STACK_MODE),
+                                 (u32[]){screen->width_in_pixels / 2 * i,
+                                         0,
+                                         screen->width_in_pixels / 2,
+                                         screen->height_in_pixels,
+                                         XCB_STACK_MODE_ABOVE});
+            xcb_map_window(conn, (*client)->win);
+            nyla_focus_window(conn, (*client)->win);
+        }
+        i++;
+    }
+}
 
-NYLA_XEVENT_HANDLER(map_notify) {}
+NYLA_XEVENT_HANDLER(map_request)
+{
+    xcb_map_window(conn, e->window);
+}
 
-NYLA_XEVENT_HANDLER(unmap_notify) {}
+NYLA_XEVENT_HANDLER(map_notify)
+{
+    if (e->override_redirect)
+        return;
+
+    NYLA_FOREACH_ARRAY_IF (client, clients, client->win == e->window)
+    {
+        client->flags |= NylaClientFlagMapped;
+        break;
+    }
+}
+
+NYLA_XEVENT_HANDLER(unmap_notify)
+{
+    NYLA_FOREACH_IF (client, clients, NYLA_ARRAY_END(clients), client->win == e->window)
+    {
+        client->flags &= ~NylaClientFlagMapped;
+
+        NYLA_FOREACH_ARRAY_IF (activeClient, activeClients, *activeClient == client)
+        {
+            activeClient = NULL;
+            break;
+        }
+
+        break;
+    }
+}
 
 NYLA_XEVENT_HANDLER(key_press)
 {
@@ -266,9 +310,9 @@ NYLA_XEVENT_HANDLER(key_press)
     {
         if (e->detail == fKeycode)
         {
-            if (activeClient)
+            if (activeClients)
             {
-                NYLA_FOREACH_IF (client, activeClient + 1, NYLA_ARRAY_END(clients), client->win)
+                NYLA_FOREACH_IF (client, activeClients + 1, NYLA_ARRAY_END(clients), client->win)
                 {
                     NYLA_DLOG_FMT("using %lu", (u64)client);
 
@@ -284,10 +328,10 @@ NYLA_XEVENT_HANDLER(key_press)
                                                  screen->height_in_pixels,
                                                  XCB_STACK_MODE_ABOVE});
 
-                    if (activeClient)
+                    if (activeClients)
                     {
                         xcb_configure_window(conn,
-                                             activeClient->win,
+                                             activeClients->win,
                                              XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH |
                                                XCB_CONFIG_WINDOW_HEIGHT,
                                              (i32[]){-screen->width_in_pixels / 4 * 0,
@@ -296,11 +340,11 @@ NYLA_XEVENT_HANDLER(key_press)
                                                      screen->height_in_pixels});
                     }
 
-                    activeClient = client;
+                    activeClients = client;
                     return;
                 }
 
-                NYLA_FOREACH_IF (client, clients, activeClient, client->win)
+                NYLA_FOREACH_IF (client, clients, activeClients, client->win)
                 {
                     NYLA_DLOG_FMT("using %lu", (u64)client);
 
@@ -316,10 +360,10 @@ NYLA_XEVENT_HANDLER(key_press)
                                                  screen->height_in_pixels,
                                                  XCB_STACK_MODE_ABOVE});
 
-                    if (activeClient)
+                    if (activeClients)
                     {
                         xcb_configure_window(conn,
-                                             activeClient->win,
+                                             activeClients->win,
                                              XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH |
                                                XCB_CONFIG_WINDOW_HEIGHT,
                                              (i32[]){-screen->width_in_pixels / 4 * 0,
@@ -328,13 +372,13 @@ NYLA_XEVENT_HANDLER(key_press)
                                                      screen->height_in_pixels});
                     }
 
-                    activeClient = client;
+                    activeClients = client;
                     return;
                 }
             }
             else
             {
-                NYLA_FOREACH_IF (client, clients, NYLA_ARRAY_END(clients), client->win && client != activeClient)
+                NYLA_FOREACH_IF (client, clients, NYLA_ARRAY_END(clients), client->win && client != activeClients)
                 {
                     NYLA_DLOG_FMT("using %lu", (u64)client);
 
@@ -350,18 +394,18 @@ NYLA_XEVENT_HANDLER(key_press)
                                                  screen->height_in_pixels,
                                                  XCB_STACK_MODE_ABOVE});
 
-                    if (activeClient)
+                    if (activeClients)
                     {
                         xcb_configure_window(
                           conn,
-                          activeClient->win,
+                          activeClients->win,
                           XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH |
                             XCB_CONFIG_WINDOW_HEIGHT,
                           (u32[]){
                             screen->width_in_pixels / 4 * 3, 0, screen->width_in_pixels / 2, screen->height_in_pixels});
                     }
 
-                    activeClient = client;
+                    activeClients = client;
                     break;
                 }
             }
@@ -380,6 +424,11 @@ NYLA_XEVENT_HANDLER(key_press)
 
     if (chordKey == sKeycode)
     {
+        if (e->detail == fKeycode)
+        {
+            activeCol = !activeCol;
+        }
+
         if (e->detail == rKeycode)
             nyla_restart();
 
@@ -398,32 +447,13 @@ NYLA_XEVENT_HANDLER(key_release)
 
 NYLA_XEVENT_HANDLER(create_notify)
 {
-    if (e->parent != screen->root || e->override_redirect)
+    if (e->override_redirect || e->parent != screen->root)
         return;
 
-    NYLA_FOREACH_IF (client, clients, NYLA_ARRAY_END(clients), !client->win)
+    NYLA_FOREACH_ARRAY_IF (client, clients, !client->win)
     {
         client->win = e->window;
         NYLA_ZERO_AFTER(client, win);
-
-#if 0
-        xcb_map_window(conn, client->window);
-        nyla_focus_window(conn, client->window);
-        xcb_configure_window(conn,
-                             client->window,
-                             XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT | XCB_CONFIG_WINDOW_STACK_MODE,
-                             (u32[]){screen->width_in_pixels / 4, 0, screen->width_in_pixels / 2, screen->height_in_pixels, XCB_STACK_MODE_ABOVE});
-
-        if (activeClient)
-        {
-            xcb_configure_window(conn,
-                                 activeClient->window,
-                                 XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT,
-                                 (u32[]){screen->width_in_pixels / 4 * 3, 0, screen->width_in_pixels / 2, screen->height_in_pixels});
-        }
-
-        activeClient = client;
-#endif
         break;
     }
 }
@@ -432,14 +462,27 @@ NYLA_XEVENT_HANDLER(destroy_notify)
 {
     NYLA_DLOG_FMT("removing %dl", e->window);
 
-    NYLA_FOREACH_IF (client, clients, NYLA_ARRAY_END(clients), client->win == e->window)
+    NYLA_FOREACH_ARRAY_IF (client, clients, client->win == e->window)
     {
         NYLA_ZERO(client);
         break;
     }
 }
 
-NYLA_XEVENT_HANDLER(configure_request) {}
+NYLA_XEVENT_HANDLER(configure_request)
+{
+    NYLA_FOREACH_ARRAY_IF (activeClient, activeClients, *activeClient && (*activeClient)->win == e->window)
+    {
+        nyla_arrange_active_clients();
+        return;
+    }
+
+    xcb_configure_window(conn,
+                         e->window,
+                         (XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH |
+                          XCB_CONFIG_WINDOW_HEIGHT | XCB_CONFIG_WINDOW_STACK_MODE),
+                         (u32[]){screen->width_in_pixels, 0, 20, 20, XCB_STACK_MODE_BELOW});
+}
 
 NYLA_XEVENT_HANDLER(configure_notify) {}
 
