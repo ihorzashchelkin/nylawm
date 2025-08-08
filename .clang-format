@@ -64,7 +64,7 @@ BinPackArguments: false
 BinPackParameters: OnePerLine
 BitFieldColonSpacing: Both
 BraceWrapping:
-  AfterCaseLabel:  false
+  AfterCaseLabel:  true
   AfterClass:      true
   AfterControlStatement: true
   AfterEnum:       true
@@ -96,7 +96,7 @@ BreakFunctionDefinitionParameters: false
 BreakInheritanceList: BeforeComma
 BreakStringLiterals: true
 BreakTemplateDeclarations: Yes
-ColumnLimit:     200
+ColumnLimit:     120
 CommentPragmas:  '^ IWYU pragma:'
 CompactNamespaces: false
 ConstructorInitializerIndentWidth: 2

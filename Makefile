@@ -1,4 +1,4 @@
-build: configure shaders
+build: configure
 	ninja -C build
 
 shaders:
