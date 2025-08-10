@@ -1,6 +1,5 @@
-#include "nyla.h"
-
-#include "overlay.c"
+#include "nyla.hpp"
+#include "overlay.cpp"
 
 enum
 {
@@ -52,10 +51,10 @@ KEYS(X)
 static const char* termCommand[] = {"ghostty", NULL};
 
 static const char** argv;
-FILE* logFile;
+int logFd;
 Display* dpy;
 xcb_connection_t* conn;
-static xcb_screen_t* screen;
+xcb_screen_t* screen;
 
 static Client clients[64];
 static xcb_keycode_t chordKey;
@@ -90,7 +89,7 @@ char* get_window_name(xcb_window_t win)
         }
     }
 
-    char* name = malloc(len + 1);
+    char* name = new char[len + 1];
     memcpy(name, xcb_get_property_value(reply), len);
     name[len] = '\0';
     free(reply);
@@ -161,7 +160,7 @@ void map_keyboard()
 
 void arrange()
 {
-    for (int i = 0; i < len(activeClients); ++i)
+    for (uint i = 0; i < std::size(activeClients); ++i)
     {
         if (!activeClients[i])
             continue;
@@ -173,7 +172,7 @@ void arrange()
                               XCB_CONFIG_WINDOW_HEIGHT | XCB_CONFIG_WINDOW_STACK_MODE),
                              (u32[]){screen->width_in_pixels / 2 * i,
                                      0,
-                                     screen->width_in_pixels / 2,
+                                     (u32)(screen->width_in_pixels / 2),
                                      screen->height_in_pixels,
                                      XCB_STACK_MODE_ABOVE});
         xcb_map_window(conn, client->win);
@@ -183,7 +182,7 @@ void arrange()
 
 u8 is_client_active(int clientIndex)
 {
-    for (int i = 0; i < len(activeClients); ++i)
+    for (uint i = 0; i < std::size(activeClients); ++i)
         if (activeClients[i] == clientIndex)
             return true;
     return false;
@@ -199,11 +198,11 @@ HANDLER(map_notify)
     if (e->override_redirect)
         return;
 
-    for (Client* client = clients; client != clients + len(clients); ++client)
+    for (auto& client : clients)
     {
-        if (client->win == e->window)
+        if (client.win == e->window)
         {
-            client->flags |= ClientFlagMapped;
+            client.flags |= ClientFlagMapped;
             break;
         }
     }
@@ -211,7 +210,7 @@ HANDLER(map_notify)
 
 HANDLER(unmap_notify)
 {
-    for (int i = 0; i < len(clients); ++i)
+    for (uint i = 0; i < std::size(clients); ++i)
     {
         Client* client = clients + i;
 
@@ -219,7 +218,7 @@ HANDLER(unmap_notify)
         {
             client->flags &= ~ClientFlagMapped;
 
-            for (int j = 0; j < len(activeClients); ++j)
+            for (uint j = 0; j < std::size(activeClients); ++j)
             {
                 if (activeClients[j] == i)
                 {
@@ -252,7 +251,7 @@ HANDLER(key_press)
 
         if (e->detail == fKeycode)
         {
-            for (int i = 0; i < len(clients); ++i)
+            for (uint i = 0; i < std::size(clients); ++i)
             {
                 Client* client = clients + i;
                 if (client->win)
@@ -311,12 +310,12 @@ HANDLER(create_notify)
     if (e->override_redirect || e->parent != screen->root)
         return;
 
-    for (Client* client = clients; client != clients + len(clients); ++client)
+    for (auto& client : clients)
     {
-        if (!client->win)
+        if (!client.win)
         {
-            client->win = e->window;
-            zero_after(client, win);
+            client.win = e->window;
+            zero_after(&client, win);
             break;
         }
     }
@@ -326,11 +325,11 @@ HANDLER(destroy_notify)
 {
     debug_fmt("removing %dl", e->window);
 
-    for (Client* client = clients; client != clients + len(clients); ++client)
+    for (auto& client : clients)
     {
-        if (client->win == e->window)
+        if (client.win == e->window)
         {
-            zero(client);
+            zero(&client);
             break;
         }
     }
@@ -338,13 +337,13 @@ HANDLER(destroy_notify)
 
 int get_client_index(xcb_window_t win)
 {
-    for (int i = 0; i < len(clients); ++i)
+    int i = 0;
+    for (auto& client : clients)
     {
-        Client* client = clients + i;
-        if (client->win == win)
+        if (client.win == win)
             return i;
+        i++;
     }
-
     return -1;
 }
 
@@ -395,15 +394,13 @@ HANDLER(focus_out)
 int main(int argc, const char* _argv[])
 {
     argv = _argv;
-    memset(activeClients, ActiveClientUnset, len(activeClients));
+    memset(activeClients, ActiveClientUnset, std::size(activeClients));
 
+    logFd = open("/home/izashchelkin/nylalog", O_APPEND | O_TRUNC | O_WRONLY | O_CREAT);
+    if (!logFd)
     {
-        logFile = stderr;
-        int logFileFd = open("/home/izashchelkin/nylalog", O_APPEND | O_TRUNC | O_WRONLY | O_CREAT);
-        assert(logFileFd && "could not open log file");
-        FILE* tmp = fdopen(logFileFd, "a");
-        assert(tmp && "could not open log file");
-        logFile = tmp;
+        logFd = stderr->_fileno;
+        assert(false);
     }
 
     {
@@ -428,7 +425,7 @@ int main(int argc, const char* _argv[])
 #define X(name)                                                                                                        \
     do                                                                                                                 \
     {                                                                                                                  \
-        xcb_reply_var(r, xcb_intern_atom, false, len(#name) - 1, #name);                                               \
+        xcb_reply_var(r, xcb_intern_atom, false, std::size(#name) - 1, #name);                                         \
         assert(r && "could not intern " #name);                                                                        \
         ATOM_##name = r->atom;                                                                                         \
         free(r);                                                                                                       \
@@ -479,25 +476,7 @@ int main(int argc, const char* _argv[])
         }
     }
 
-    {
-        overlayWindow = xcb_generate_id(conn);
-        bool ok = !xcb_checked(xcb_create_window,
-                               XCB_COPY_FROM_PARENT,
-                               overlayWindow,
-                               screen->root,
-                               0,
-                               0,
-                               screen->width_in_pixels,
-                               screen->height_in_pixels,
-                               0,
-                               XCB_WINDOW_CLASS_INPUT_OUTPUT,
-                               XCB_COPY_FROM_PARENT,
-                               0,
-                               (u32[]){});
-        assert(ok && "could not create overlay window");
-
-        // glXChooseFBConfig(dpy, DefaultScreen(dpy), const int* attribList, int* nitems);
-    }
+    initOverlay();
 
     while (true)
     {
@@ -508,7 +487,7 @@ int main(int argc, const char* _argv[])
             switch (e->response_type & ~0x80)
             {
 #define X(_event, _type)                                                                                               \
-    case _event: nyla_handle_##_type((void*)e); break;
+    case _event: nyla_handle_##_type((xcb_##_type##_event_t*)(void*)e); break;
                 EVENTS(X)
 #undef X
                 case 0:

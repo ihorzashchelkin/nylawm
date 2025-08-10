@@ -1,8 +1,9 @@
-#include "nyla.h"
+#include "nyla.hpp"
+#include <iterator>
 
-static EGLDisplay* eglDpy;
-static EGLContext* eglContext;
-static EGLSurface* eglSurface;
+static EGLDisplay eglDpy;
+static EGLContext eglContext;
+static EGLSurface eglSurface;
 
 #define GL_FUNCTIONS(X)                                                                                                \
     X(PFNGLENABLEPROC, glEnable)                                                                                       \
@@ -99,12 +100,26 @@ void initOverlay()
     glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
 #endif
 
-    {
-        EGLConfig configs[64];
-        int numConfigs;
-        assert(eglChooseConfig(eglDpy,
-                               (EGLint[]){
-                                   // clang-format off
+    bool ok = !xcb_checked(xcb_create_window,
+                           XCB_COPY_FROM_PARENT,
+                           overlayWindow,
+                           screen->root,
+                           0,
+                           0,
+                           screen->width_in_pixels,
+                           screen->height_in_pixels,
+                           0,
+                           XCB_WINDOW_CLASS_INPUT_OUTPUT,
+                           XCB_COPY_FROM_PARENT,
+                           0,
+                           (u32[]){});
+    assert(ok && "could not create overlay window");
+
+    EGLConfig configs[64];
+    int numConfigs;
+    assert(eglChooseConfig(eglDpy,
+                           (EGLint[]){
+                               // clang-format off
                                    EGL_SURFACE_TYPE,         EGL_WINDOW_BIT,
                                    EGL_CONFORMANT,           EGL_OPENGL_BIT,
                                    EGL_RENDERABLE_TYPE,      EGL_OPENGL_BIT,
@@ -121,29 +136,28 @@ void initOverlay()
                                    // EGL_SAMPLES,           4, // 4x MSAA
 
                                    EGL_NONE,
-                                   // clang-format on
-                               },
-                               configs,
-                               len(configs),
-                               &numConfigs));
+                               // clang-format on
+                           },
+                           configs,
+                           std::size(configs),
+                           &numConfigs));
 
-        for (EGLConfig* config = configs; config != configs + numConfigs; ++config)
-        {
-            EGLAttrib attr[] = {EGL_RENDER_BUFFER,
-                                EGL_BACK_BUFFER,
+    for (EGLConfig* config = configs; config != configs + numConfigs; ++config)
+    {
+        EGLAttrib attr[] = {EGL_RENDER_BUFFER,
+                            EGL_BACK_BUFFER,
 
-                                // uncomment for sRGB framebuffer
-                                // don't forget to call glEnable(GL_FRAMEBUFFER_SRGB) if shader outputs
-                                // linear
-                                // EGL_GL_COLORSPACE, EGL_GL_COLORSPACE_SRGB,
+                            // uncomment for sRGB framebuffer
+                            // don't forget to call glEnable(GL_FRAMEBUFFER_SRGB) if shader outputs
+                            // linear
+                            // EGL_GL_COLORSPACE, EGL_GL_COLORSPACE_SRGB,
 
-                                EGL_NONE};
+                            EGL_NONE};
 
-            eglSurface = eglCreatePlatformWindowSurface(eglDpy, config, &overlayWindow, attr);
-            if (eglSurface)
-                break;
-        }
-
-        assert(eglSurface != EGL_NO_SURFACE);
+        eglSurface = eglCreatePlatformWindowSurface(eglDpy, config, &overlayWindow, attr);
+        if (eglSurface)
+            break;
     }
+
+    assert(eglSurface != EGL_NO_SURFACE);
 }

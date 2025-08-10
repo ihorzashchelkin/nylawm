@@ -1,11 +1,11 @@
 project(
   'nylawm',
-  'c',
+  'cpp',
 )
 
 executable(
   'nyla',
-  ['src/nyla.c'],
+  ['src/nyla.cpp'],
   dependencies: [
     dependency('GL'),
     dependency('egl'),
